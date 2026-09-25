@@ -1,0 +1,135 @@
+/* Office illustration palette — light = daytime studio, dark = night shift. */
+.office-scene {
+  --office-floor: #ecd8bb;
+  --office-plank-alt: #e9d4b5;
+  --office-plank-line: #ddc4a2;
+  --office-wall: #f7f0e6;
+  --office-wall-shade: #ede3d5;
+  --office-wainscot: #bfd8cb;
+  --office-wainscot-line: #a8c7b7;
+  --office-skirting: #8fb3a2;
+  --office-frame: #ffffff;
+  --office-sill: #e6dccd;
+  --office-board: #fdfdfe;
+  --office-desk-top: #fdfaf4;
+  --office-desk-edge: #e7dccb;
+  --office-desk-leg: #b48a60;
+  --office-wood: #cf9f6d;
+  --office-wood-dark: #a8784d;
+  --office-keyboard: #d9d4de;
+  --office-screen-off: #2c2840;
+  --office-carpet: #ddd5f6;
+  --office-carpet-line: #cdc2ef;
+  --office-tile: #e4e9f1;
+  --office-tile-line: #d2d9e5;
+  --office-pod1: #cdeee4;
+  --office-pod1-edge: #8fd3be;
+  --office-pod2: #fbdcd2;
+  --office-pod2-edge: #f2ad97;
+  --office-rug-lounge: #f6c3ae;
+  --office-rug-lounge-edge: #ec9f84;
+  --office-rug-meet: #cfdcf4;
+  --office-rug-meet-edge: #b1c5ec;
+  --office-rug-lib: #f5dc96;
+  --office-rug-lib-edge: #e2bd5c;
+  --office-glass: rgb(190 222 246 / 0.3);
+  --office-glass-frame: #cfd8e3;
+  --office-sofa: #5b7fd6;
+  --office-sofa-seat: #7093e3;
+  --office-label: rgb(255 255 255 / 0.94);
+  --office-label-edge: rgb(30 16 48 / 0.1);
+  --office-label-text: #2d2838;
+  --office-zone-label: rgb(45 40 56 / 0.4);
+  --office-steam: #9a92a8;
+  --office-glow-o: 0.35;
+}
+.dark .office-scene {
+  --office-floor: #3a3247;
+  --office-plank-alt: #372f44;
+  --office-plank-line: #2f283b;
+  --office-wall: #2a2640;
+  --office-wall-shade: #232036;
+  --office-wainscot: #303d57;
+  --office-wainscot-line: #2a354d;
+  --office-skirting: #253047;
+  --office-frame: #474262;
+  --office-sill: #3b3653;
+  --office-board: #dcdbe6;
+  --office-desk-top: #4a4462;
+  --office-desk-edge: #3a3552;
+  --office-desk-leg: #6f5a48;
+  --office-wood: #7d5e45;
+  --office-wood-dark: #604735;
+  --office-keyboard: #5b556f;
+  --office-screen-off: #16131f;
+  --office-carpet: #393256;
+  --office-carpet-line: #332c4e;
+  --office-tile: #2f3446;
+  --office-tile-line: #293041;
+  --office-pod1: #2b4744;
+  --office-pod1-edge: #3d6b64;
+  --office-pod2: #4a3239;
+  --office-pod2-edge: #6d4652;
+  --office-rug-lounge: #563945;
+  --office-rug-lounge-edge: #6e4855;
+  --office-rug-meet: #2f3a58;
+  --office-rug-meet-edge: #3d4a6e;
+  --office-rug-lib: #4f452f;
+  --office-rug-lib-edge: #665935;
+  --office-glass: rgb(120 150 210 / 0.12);
+  --office-glass-frame: #5a6180;
+  --office-sofa: #3f5aa0;
+  --office-sofa-seat: #4b68b0;
+  --office-label: rgb(30 27 43 / 0.92);
+  --office-label-edge: rgb(255 255 255 / 0.12);
+  --office-label-text: #f4f4f5;
+  --office-zone-label: rgb(244 244 245 / 0.35);
+  --office-steam: #8d86a0;
+  --office-glow-o: 0.6;
+}
+
+.office-scene .office-night-only { opacity: 0; transition: opacity 0.6s; }
+.dark .office-scene .office-night-only { opacity: 1; }
+.dark .office-scene .office-day-only { opacity: 0; }
+
+.office-scene svg { touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.office-scene[data-zoomed="true"] svg { touch-action: none; cursor: grab; }
+.office-scene[data-dragging="true"] svg { cursor: grabbing; }
+.office-scene .office-clickable { cursor: pointer; outline: none; }
+.office-scene .office-clickable:hover, .office-scene .office-clickable:focus-visible { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in oklch, var(--color-primary) 45%, transparent)); }
+.office-scene .office-character { cursor: pointer; outline: none; }
+.office-scene [data-agent]:focus { outline: none; }
+.office-scene [data-agent]:focus-visible .office-label rect { stroke: var(--color-ring); stroke-width: 2; }
+
+.office-scene .office-code { animation: office-code 2.4s linear infinite; }
+.office-scene .office-glow { opacity: var(--office-glow-o); animation: office-glow 2.8s ease-in-out infinite; }
+.office-scene .office-glow-strong { animation: office-pulse 1.8s ease-in-out infinite; }
+.office-scene .office-blink { animation: office-blink 1.6s steps(1, end) infinite; }
+.office-scene .office-twinkle { animation: office-twinkle 3s ease-in-out infinite; }
+.office-scene .office-pulse { animation: office-pulse 1.2s ease-in-out infinite; }
+.office-scene .office-breathe { animation: office-breathe 4s ease-in-out infinite; }
+.office-scene .office-steam { animation: office-steam 2.6s ease-in-out infinite; }
+.office-scene .office-sway { animation: office-sway 6s ease-in-out infinite; }
+.office-scene .office-cloud { animation: office-cloud 26s ease-in-out infinite alternate; }
+.office-scene .office-bob { animation: office-bob 2.4s ease-in-out infinite; }
+.office-scene .office-ball { animation: office-ball 1.8s ease-in-out infinite; }
+.office-scene .office-bubble-rise { animation: office-rise 3.4s ease-in infinite; }
+.office-scene .office-draw { stroke-dasharray: 260; animation: office-draw 6s ease-in-out infinite; }
+
+@keyframes office-code { from { transform: translateY(0); } to { transform: translateY(-35px); } }
+@keyframes office-glow { 0%, 100% { opacity: calc(var(--office-glow-o) * 0.6); } 50% { opacity: calc(var(--office-glow-o) * 1.4); } }
+@keyframes office-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.25; } }
+@keyframes office-twinkle { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.25; } }
+@keyframes office-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes office-breathe { 0%, 100% { transform: scale(0.8); opacity: 0.6; } 50% { transform: scale(1.15); opacity: 1; } }
+@keyframes office-steam { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: 0.8; } 100% { opacity: 0; transform: translateY(-7px); } }
+@keyframes office-sway { 0%, 100% { transform: rotate(-1.6deg); } 50% { transform: rotate(2deg); } }
+@keyframes office-cloud { from { transform: translateX(-16px); } to { transform: translateX(20px); } }
+@keyframes office-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes office-ball { 0%, 100% { transform: translateX(-26px); } 50% { transform: translateX(22px); } }
+@keyframes office-rise { 0% { transform: translateY(6px); opacity: 0; } 30% { opacity: 0.8; } 100% { transform: translateY(-10px); opacity: 0; } }
+@keyframes office-draw { 0% { stroke-dashoffset: 260; } 40%, 100% { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .office-scene * { animation: none !important; transition: none !important; }
+}

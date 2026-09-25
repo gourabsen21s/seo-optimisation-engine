@@ -1,0 +1,72 @@
+name: seo-engine
+
+x-app: &app
+  build: .
+  image: seo-engine:latest
+  env_file: .env
+  environment:
+    SEO_ENVIRONMENT: production
+    SEO_DATABASE_URL: postgresql+asyncpg://seo:${POSTGRES_PASSWORD:-seo}@postgres:5432/seo
+    SEO_REDIS_URL: redis://redis:6379/0
+    SEO_QDRANT_URL: http://qdrant:6333
+    SEO_DATA_DIR: /app/data
+  volumes:
+    - appdata:/app/data
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *app
+    ports:
+      - "${PORT:-8000}:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      qdrant: { condition: service_started }
+
+  worker:
+    <<: *app
+    command: ["seo-engine", "worker"]
+    depends_on:
+      app: { condition: service_healthy }
+    healthcheck:
+      disable: true
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: seo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seo}
+      POSTGRES_DB: seo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seo -d seo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    volumes:
+      - qdrantdata:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
+  appdata:

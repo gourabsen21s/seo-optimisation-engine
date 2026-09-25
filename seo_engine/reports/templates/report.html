@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankcrew audit — {{ r.site_url }}</title>
+<style>
+  :root { --bg:#fafafa; --card:#fff; --ink:#18181b; --muted:#71717a; --line:#e4e4e7; --accent:#6366f1;
+          --crit:#dc2626; --high:#ea580c; --med:#d97706; --low:#0284c7; --info:#71717a; --pass:#059669; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#09090b; --card:#18181b; --ink:#fafafa; --muted:#a1a1aa; --line:#27272a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 19px; margin: 36px 0 12px; }
+  .muted { color: var(--muted); } a { color: var(--accent); word-break: break-all; }
+  .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .score { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; }
+  .bar > span { display:block; height:100%; background:var(--accent); }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; color:#fff; }
+  .critical{background:var(--crit)} .high{background:var(--high)} .medium{background:var(--med)} .low{background:var(--low)} .info{background:var(--info)}
+  .pass{background:var(--pass)} .warn{background:var(--med)} .fail{background:var(--crit)} .manual{background:var(--info)}
+  .finding { border-top:1px solid var(--line); padding:12px 0; }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align: top; }
+  .req-row td:first-child { width: 52px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rankcrew · SEO &amp; AdSense readiness audit</h1>
+  <div class="muted"><a href="{{ r.site_url }}">{{ r.site_url }}</a> · {{ r.pages_crawled }} URLs crawled · generated {{ generated }}</div>
+
+  <h2>Scores</h2>
+  <div class="grid">
+    {% for label, value in [("Overall", r.overall_score), ("SEO health", r.seo_score), ("AdSense readiness", r.adsense_score)] %}
+    <div class="card"><div class="muted">{{ label }}</div><div class="score">{{ value }}</div>
+      <div class="bar"><span style="width: {{ value }}%"></span></div></div>
+    {% endfor %}
+  </div>
+  <div class="grid" style="margin-top:12px">
+    {% for key, name in sections.items() %}
+    <div class="card"><div class="muted">{{ key }} · {{ name }}</div><strong>{{ r.section_scores[key] }}</strong>
+      <div class="bar"><span style="width: {{ r.section_scores[key] }}%"></span></div></div>
+    {% endfor %}
+  </div>
+
+  <h2>Findings ({{ r.findings | length }})</h2>
+  <div class="card">
+  {% for f in r.findings %}
+    <div class="finding">
+      <span class="badge {{ f.severity }}">{{ f.severity }}</span>
+      {% if f.requirement %}<span class="muted">R{{ f.requirement }}</span>{% endif %}
+      <strong>{{ f.title }}</strong>
+      {% if f.detail %}<div class="muted">{{ f.detail }}</div>{% endif %}
+      {% if f.recommendation %}<div>→ {{ f.recommendation }}</div>{% endif %}
+      {% if f.urls %}<details><summary>{{ f.urls | length }} affected URLs</summary>
+        {% for u in f.urls[:50] %}<div><a href="{{ u }}">{{ u }}</a></div>{% endfor %}</details>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+
+  <h2>AdSense Approval Manual — 40 requirements</h2>
+  <div class="card"><table>
+    {% for q in r.requirements %}
+    <tr class="req-row"><td><span class="badge {{ q.status }}">{{ q.status }}</span></td>
+      <td><strong>R{{ q.id }} · {{ q.title }}</strong> <span class="muted">({{ q.level | replace('_', ' ') }})</span>
+        <div class="muted">{{ q.verify }}</div></td></tr>
+    {% endfor %}
+  </table></div>
+
+  {% if judgements %}
+  <h2>Content judgements</h2>
+  <div class="card"><table>
+    <tr><th>URL</th><th>Policy risks</th><th>Generic AI</th><th>Depth</th><th>Sources</th><th>Intent</th></tr>
+    {% for j in judgements %}
+    <tr><td><a href="{{ j.url }}">{{ j.url }}</a></td><td>{{ j.policy_risks | join(', ') or '—' }}</td>
+      <td>{{ '%.0f' % (j.reads_generic_ai * 100) }}%</td><td>{{ '%.0f' % (j.helpful_depth * 100) }}%</td>
+      <td>{{ 'yes' if j.cites_sources else 'no' }}</td><td>{{ j.search_intent }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  <h2>Pages</h2>
+  <div class="card"><table>
+    <tr><th>URL</th><th>Status</th><th>Type</th><th>Words</th><th>Title</th></tr>
+    {% for p in r.pages[:500] %}
+    <tr><td><a href="{{ p.url }}">{{ p.url }}</a></td><td>{{ p.status }}</td><td>{{ p.type }}</td><td>{{ p.words }}</td><td>{{ p.title or '' }}</td></tr>
+    {% endfor %}
+  </table></div>
+</main>
+</body>
+</html>

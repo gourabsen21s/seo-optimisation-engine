@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+*.db
+*.db-journal
+frontend/node_modules/
+frontend/dist/
+seo-drafts/
+.DS_Store
+data/
+.tools/
+*.log
+.claude/settings.local.json

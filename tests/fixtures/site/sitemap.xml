@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>http://127.0.0.1:8765/</loc><lastmod>2024-01-05</lastmod></url>
+<url><loc>http://127.0.0.1:8765/blog/first-post/</loc><lastmod>2024-01-05</lastmod></url>
+<url><loc>http://127.0.0.1:8765/orphan/</loc></url>
+</urlset>
