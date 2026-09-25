@@ -55,7 +55,7 @@
 .lp-nums { font-variant-numeric: tabular-nums; }
 .lp-skip { position: fixed; left: 16px; top: 12px; z-index: 80; padding: 10px 16px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; transform: translateY(-160%); }
 .lp-skip:focus-visible { transform: none; }
-html:has(.lp) { scrollbar-color: rgb(158 171 191 / 0.4) transparent; scrollbar-width: thin; background: #0a0e17; }
+html.lp-root { scrollbar-color: rgb(158 171 191 / 0.4) transparent; scrollbar-width: thin; background: #0a0e17; }
 html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user-select: none; }
 
 .g-day {
@@ -134,9 +134,8 @@ html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user
 .lp-wrap { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: var(--gutter); }
 
 .lp-grain {
-  position: fixed; inset: -50%; z-index: 60; pointer-events: none; opacity: 0.05;
+  position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0.035;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  mix-blend-mode: overlay;
 }
 
 /* The day rail ─────────────────────────────────────────────────────────── */
@@ -209,7 +208,7 @@ html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user
     linear-gradient(180deg, #05070d 0%, #0a1020 38%, #141a33 62%, #2b2038 80%, #57302d 94%, #7a3b25 100%);
 }
 .lp-dawn__stars { inset: 0 0 30% 0; width: 100%; height: 70%; fill: #dfe7ff; }
-.lp-dawn__stars circle { animation: lp-twinkle 4s ease-in-out infinite; }
+.lp-dawn__stars g { animation: lp-twinkle 4s ease-in-out infinite; }
 .lp-dawn__glow {
   inset: auto -10% -18% -10%; height: 70%;
   background: radial-gradient(55% 60% at 53% 100%, rgb(255 122 47 / 0.55), rgb(255 122 47 / 0.12) 45%, transparent 72%);
@@ -224,7 +223,9 @@ html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user
   background: linear-gradient(180deg, transparent, rgb(120 110 150 / 0.16) 45%, rgb(150 110 120 / 0.1) 60%, transparent);
   filter: blur(8px);
 }
-.lp-dawn__city { inset: 0; width: 100%; height: 100%; }
+.lp-dawn__city, .lp-dawn__glass { inset: 0; width: 100%; height: 100%; }
+.lp-dawn__glass { pointer-events: none; }
+.lp-dawn__office { left: 0; top: 0; transform-origin: 0 0; will-change: transform; contain: strict; }
 .lp-dawn__near { bottom: 0; height: 100%; width: auto; transform-origin: 50% 100%; }
 .lp-dawn__near--l { left: 0; width: 22vw; transform-origin: 0% 100%; }
 .lp-dawn__near--r { right: 0; width: 20vw; transform-origin: 100% 100%; }
@@ -292,6 +293,8 @@ html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user
 }
 .lp .office-scene.lo .office-night-only { opacity: calc(1 - var(--day)); transition: none; }
 .lp .office-scene.lo .office-day-only { opacity: var(--day); }
+/* On the landing the office is scenery: its people move, its furniture holds still (every CSS loop costs a repaint). */
+.lp .office-scene.lo [class*="office-"] { animation: none; }
 
 @keyframes lp-twinkle { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.3; } }
 @keyframes lp-beacon { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
@@ -407,7 +410,7 @@ html[data-scrubbing], html[data-scrubbing] * { cursor: grabbing !important; user
 
 /* 12:00 Noon ───────────────────────────────────────────────────────────── */
 .lp-noon .lp-stage { background: var(--canvas); }
-.lp-noon__office { position: absolute; inset: 0; width: 100%; height: 100%; }
+.lp-noon__office { position: absolute; left: 0; top: 0; transform-origin: 0 0; contain: strict; }
 .lp-noon__captions { position: absolute; left: var(--gutter); bottom: clamp(20px, 5vh, 48px); right: var(--gutter); display: grid; }
 .lp-noon__cap {
   grid-area: 1 / 1; justify-self: start; max-width: min(640px, 100%);

@@ -23,7 +23,8 @@ export const OfficeWorld = memo(function OfficeWorld({ dark, working, atDesks = 
   atDesks?: boolean;
   onDirector?: (d: OfficeDirector | null) => void;
 }) {
-  const director = useMemo(() => new OfficeDirector((id) => NAMES[id], { atDesks }), [atDesks]);
+  // Scripted offices are scenery on marketing and sign-in pages, so they run the director in calm mode.
+  const director = useMemo(() => new OfficeDirector((id) => NAMES[id], { atDesks, calm: true }), [atDesks]);
   const parts = useMemo(() => new Map<EmployeeId, Partial<CharacterParts>>(), []);
   const handlers = useMemo(() => {
     const make = (id: EmployeeId) => (p: Partial<CharacterParts> | null) => {

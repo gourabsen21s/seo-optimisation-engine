@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from ...knowledge.index import get_index
@@ -11,6 +11,7 @@ from ...services import sites as site_service
 from ...workers.queue import enqueue
 from ...workforce import board, rituals
 from ...workforce.roster import ROSTER
+from ..deps import require_credits
 
 router = APIRouter(tags=["team"])
 
@@ -59,7 +60,7 @@ async def list_tasks(site_id: int, status: str | None = None, assignee: str | No
     return [board.serialize(t) for t in await board.list_tasks(site_id, status, assignee, run_id)]
 
 
-@router.post("/sites/{site_id}/tasks", status_code=201)
+@router.post("/sites/{site_id}/tasks", status_code=201, dependencies=[Depends(require_credits)])
 async def create_task(site_id: int, body: TaskIn):
     await site_service.get_site(site_id)
     task = await board.create_task(site_id, body.assignee, body.title, body.description, created_by="human",
@@ -109,7 +110,7 @@ async def add_memory(site_id: int, body: MemoryIn):
 
 @router.delete("/sites/{site_id}/memories/{memory_id}", status_code=204)
 async def forget(site_id: int, memory_id: str):
-    await get_memory().forget(memory_id)
+    await get_memory().forget(memory_id, site_id=site_id)
     return Response(status_code=204)
 
 
@@ -123,7 +124,7 @@ async def reports(site_id: int, kind: str | None = None):
     return await rituals.list_reports(site_id, kind)
 
 
-@router.post("/sites/{site_id}/reports/{kind}", status_code=202)
+@router.post("/sites/{site_id}/reports/{kind}", status_code=202, dependencies=[Depends(require_credits)])
 async def generate_report(site_id: int, kind: Literal["standup", "weekly"]):
     await site_service.get_site(site_id)
     return {"job_id": await enqueue("standup" if kind == "standup" else "weekly_report", site_id, dedupe=False)}

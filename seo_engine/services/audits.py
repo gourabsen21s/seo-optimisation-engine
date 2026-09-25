@@ -45,19 +45,35 @@ async def get_audit(audit_id: int) -> Audit:
 
 
 async def run_audit(site_id: int, report: JobReporter, autopilot: bool = True) -> dict[str, Any]:
+    from . import credits
+
     settings = get_settings()
     async with session_scope() as s:
         site = await s.get(Site, site_id)
-        if site is None:
-            raise NotFound(f"site {site_id} not found")
+    if site is None:
+        raise NotFound(f"site {site_id} not found")
+    # Paid work: check the account first, and never crawl more pages than its credits cover.
+    await credits.ensure(site.account_id)
+    wanted = site.max_pages or settings.max_pages
+    allowed = await credits.affordable_pages(site.account_id, wanted)
+    if allowed < 1:
+        raise credits.InsufficientCredits("Not enough credits to crawl this site. Add credits in Billing.")
+    async with session_scope() as s:
         audit = Audit(site_id=site_id, status="running")
         s.add(audit)
         await s.flush()
         audit_id = audit.id
     try:
-        crawl_settings = settings.model_copy(update={"max_pages": site.max_pages or settings.max_pages})
+        crawl_settings = settings.model_copy(update={"max_pages": allowed})
+        if allowed < wanted:
+            await report.warn(f"Your credits cover {allowed} of {wanted} pages; crawling {allowed}")
         await report(f"Crawling {site.url} (up to {crawl_settings.max_pages} pages)")
         crawl = await crawl_site(site.url, crawl_settings, obey_robots=site.obey_robots)
+        if await credits.is_metered(site.account_id):
+            cost = credits.price_pages(len(crawl.pages))
+            await credits.charge(site.account_id, cost, "audit", site_id=site_id,
+                                 note=f"{len(crawl.pages)} pages crawled")
+            await report(f"Used {credits.fmt(cost)} credits for {len(crawl.pages)} pages")
         await report(f"Crawled {len(crawl.pages)} URLs ({len(crawl.html_pages())} HTML); sitemap lists "
                      f"{len(crawl.sitemap_entries)} URLs")
 

@@ -68,19 +68,24 @@ async def serialize(site: Site) -> dict[str, Any]:
     }
 
 
-async def list_sites() -> list[Site]:
+async def list_sites(account_id: int | None = None) -> list[Site]:
+    """Sites of one account, or every site when `account_id` is None (operator API keys)."""
+    q = select(Site).order_by(Site.name)
+    if account_id is not None:
+        q = q.where(Site.account_id == account_id)
     async with session_scope() as s:
-        return list(await s.scalars(select(Site).order_by(Site.name)))
+        return list(await s.scalars(q))
 
 
-async def create_site(url: str, name: str | None = None, autopilot: str = "off") -> Site:
+async def create_site(url: str, name: str | None = None, autopilot: str = "off", account_id: int | None = None) -> Site:
     url = normalize_start_url(url)
     if autopilot not in AUTOPILOT_MODES:
         raise ServiceError(f"autopilot must be one of {sorted(AUTOPILOT_MODES)}")
     async with session_scope() as s:
-        if await s.scalar(select(Site).where(Site.url == url)):
-            raise ServiceError(f"{url} is already registered")
-        site = Site(url=url, name=name or url.split("//", 1)[-1].strip("/"), autopilot=autopilot, profile={})
+        if await s.scalar(select(Site).where(Site.url == url, Site.account_id == account_id)):
+            raise ServiceError(f"{url} is already in your workspace")
+        site = Site(url=url, name=name or url.split("//", 1)[-1].strip("/"), autopilot=autopilot, profile={},
+                    account_id=account_id)
         s.add(site)
         await s.flush()
         return site

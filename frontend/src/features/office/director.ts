@@ -78,7 +78,7 @@ class Agent {
       .to(parts.legL, { rotation: -26 }, 0.21).to(parts.legR, { rotation: 26 }, 0.21)
       .to(parts.armL, { rotation: 22 }, 0.21).to(parts.armR, { rotation: -22 }, 0.21)
       .to(parts.body, { y: -2, duration: 0.105, yoyo: true, repeat: 1, ease: "sine.out" }, 0.21);
-    if (!this.reduced) {
+    if (!this.reduced && !director.calm) {
       this.idleTl = gsap.to(parts.breath, { scaleY: 1.03, scaleX: 0.99, duration: rand(1.5, 2.1), ease: "sine.inOut", yoyo: true, repeat: -1, delay: rand(0, 1) });
       this.scheduleBlink();
     }
@@ -191,8 +191,10 @@ class Agent {
     if (at !== this.tagAt) { this.tagAt = at; this.parts.tag.setAttribute("transform", at); }
     if (!this.bubbleOn && Number(gsap.getProperty(this.parts.bubbleInner, "autoAlpha")) === 0) return;
     const y = this.pos.y + this.bodyY() - this.headOffset - this.lift.v;
-    this.parts.bubble.setAttribute("transform", `translate(${this.pos.x.toFixed(1)} ${y.toFixed(1)})`);
+    const b = `translate(${this.pos.x.toFixed(1)} ${y.toFixed(1)})`;
+    if (b !== this.bubbleAt) { this.bubbleAt = b; this.parts.bubble.setAttribute("transform", b); }
   }
+  private bubbleAt = "";
 
   setLift(v: number) {
     if (v === this.liftTarget) return;
@@ -265,11 +267,12 @@ class Agent {
       this.activity = d.text ? `Working on: ${d.text}` : "Working";
       const icon = this.id === "compliance" ? "🛡️" : this.id === "engineer" ? "🧑‍💻" : this.id === "writer" ? "✍️" : "⌨️";
       this.bubbleThenCompact(d.text ? `${icon} ${d.text}` : `${icon} Working…`, icon, "brand");
+      // Calm mode (marketing pages) types in short bursts with long rests: far fewer frames to repaint.
       this.pose(gsap.timeline({ repeat: -1 })
         .to(p.armR, { rotation: -26, duration: 0.11, yoyo: true, repeat: 1, ease: "sine.inOut" })
         .to(p.armL, { rotation: 26, duration: 0.11, yoyo: true, repeat: 1, ease: "sine.inOut" }, "-=0.08")
         .to(p.armR, { rotation: -20, duration: 0.1, yoyo: true, repeat: 1 }, "+=0.02")
-        .to({}, { duration: rand(0.15, 0.7) }));
+        .to({}, { duration: this.director.calm ? rand(1.8, 3.6) : rand(0.15, 0.7) }));
     }
   }
 
@@ -476,10 +479,13 @@ export class OfficeDirector {
 
   /** `atDesks`: everyone starts at their desk's approach node instead of somewhere on the floor. */
   private atDesks: boolean;
+  /** `calm`: no breathing loop and slower typing, for pages where the office is scenery. */
+  readonly calm: boolean;
 
-  constructor(names: (id: EmployeeId) => string, opts: { atDesks?: boolean } = {}) {
+  constructor(names: (id: EmployeeId) => string, opts: { atDesks?: boolean; calm?: boolean } = {}) {
     this.names = names;
     this.atDesks = !!opts.atDesks;
+    this.calm = !!opts.calm;
   }
 
   nameOf(id: EmployeeId) { return this.names(id); }

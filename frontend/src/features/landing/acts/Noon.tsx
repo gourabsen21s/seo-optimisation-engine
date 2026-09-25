@@ -78,20 +78,26 @@ export function Noon() {
   const caps = useRef<(HTMLParagraphElement | null)[]>([]);
   const lastShot = useRef(-1);
   const prog = useRef(0);
-  const aspect = useRef(16 / 10);
-  // Measured once per resize, never inside the scroll path.
+  // Stage size and the SVG's base scale (it is sized to cover the stage at the wide shot), measured on resize only.
+  const box = useRef({ W: 1440, H: 900, so: 1 });
   useEffect(() => {
     const el = svg.current;
-    if (!el) return;
+    const stage = el?.parentElement;
+    if (!el || !stage) return;
     const ro = new ResizeObserver(([e]) => {
-      aspect.current = e.contentRect.width / Math.max(1, e.contentRect.height);
+      const W = e.contentRect.width;
+      const H = Math.max(1, e.contentRect.height);
+      const so = Math.max(W / SCENE.w, H / SCENE.h);
+      box.current = { W, H, so };
+      el.style.width = `${SCENE.w * so}px`;
+      el.style.height = `${SCENE.h * so}px`;
       draw();
     });
-    ro.observe(el);
+    ro.observe(stage);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const near = useNear(ref, "200% 0px");
+  const near = useNear(ref, "60% 0px");
   const inView = useNear(ref, "0px");
 
   // The live camera, in scene units; a tween walks it between shots.
@@ -101,12 +107,14 @@ export function Noon() {
     const el = svg.current;
     if (!el) return;
     const c = cam.current;
-    const a = aspect.current;
+    const { W, H, so } = box.current;
+    const a = W / H;
     const w = Math.min(c.w, SCENE.w, SCENE.h * a);
     const h = w / a;
     const x = Math.min(SCENE.w - w, Math.max(0, c.cx - w / 2));
     const y = Math.min(Math.max(0, SCENE.h - h), Math.max(0, c.cy - h / 2));
-    el.setAttribute("viewBox", `${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`);
+    const s = W / w; // screen px per scene unit
+    el.style.transform = `translate3d(${(-x * s).toFixed(1)}px, ${(-y * s).toFixed(1)}px, 0) scale(${(s / so).toFixed(4)})`;
   };
   const apply = (p: number) => {
     const shot = shotAt(p);
@@ -119,9 +127,13 @@ export function Noon() {
     if (reducedMotion()) { cam.current = { ...to }; draw(); return; }
     // Width travels in log space so a zoom feels even from wide to close.
     const from = { ...cam.current, lw: Math.log(cam.current.w) };
+    const el = svg.current;
+    // Composited while it moves; re-rastered sharp once it lands.
+    if (el) el.style.willChange = "transform";
     glide.current = gsap.to(from, {
       cx: to.cx, cy: to.cy, lw: Math.log(to.w), duration: 1.15, ease: "power3.inOut",
       onUpdate: () => { cam.current = { cx: from.cx, cy: from.cy, w: Math.exp(from.lw) }; draw(); },
+      onComplete: () => { if (el) el.style.willChange = "auto"; },
     });
   };
   useEffect(() => () => { glide.current?.kill(); }, []);
@@ -160,7 +172,7 @@ export function Noon() {
     <section ref={ref} id="noon" className="lp-act lp-noon g-day" style={{ "--span": 4.2 } as React.CSSProperties} data-sc-act="pin" aria-labelledby="noon-title">
       <div className="lp-stage">
         <h2 id="noon-title" className="lp-sr">12:00: the whole crew at work on the sample site</h2>
-        <svg ref={svg} className="lp-noon__office" viewBox={`0 0 ${SCENE.w} ${SCENE.h}`} preserveAspectRatio="xMidYMid slice" role="img" aria-label="The Rankcrew office at noon: all eleven employees at their desks, paper planes carrying tasks between them.">
+        <svg ref={svg} className="lp-noon__office" viewBox={`0 0 ${SCENE.w} ${SCENE.h}`} preserveAspectRatio="none" role="img" aria-label="The Rankcrew office at noon: all eleven employees at their desks, paper planes carrying tasks between them.">
           <g ref={scene} className="office-scene lo" style={{ "--day": 1 } as React.CSSProperties}>
             {near && <OfficeWorld dark={false} working={ALL} atDesks onDirector={onDirector} />}
           </g>

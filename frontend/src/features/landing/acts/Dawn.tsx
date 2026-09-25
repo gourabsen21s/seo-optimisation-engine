@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { OfficeDirector } from "@/features/office/director";
 import { SCENE } from "@/features/office/layout";
 import type { EmployeeId } from "@/lib/types";
@@ -55,6 +56,9 @@ export function Dawn() {
   const ref = useRef<HTMLElement>(null);
   const city = useCity();
   const svg = useRef<SVGSVGElement>(null);
+  const glassSvg = useRef<SVGSVGElement>(null);
+  const officeEl = useRef<HTMLDivElement>(null);
+  const officeW = useRef(0);
   const office = useRef<SVGGElement>(null);
   const layers = useRef<Record<string, HTMLElement | SVGElement | null>>({});
   const lay = (k: string) => (el: HTMLElement | SVGElement | null) => { layers.current[k] = el; };
@@ -62,7 +66,7 @@ export function Dawn() {
   const [working, setWorking] = useState<EmployeeId[]>([]);
   const workingRef = useRef(working);
   const ptr = useRef({ x: 0, y: 0 });
-  const near = useNear(ref, "50% 0px");
+  const near = useNear(ref, "15% 0px");
   const prog = useRef(0);
 
   const render = () => {
@@ -87,7 +91,26 @@ export function Dawn() {
     const cam = zoomRect(open, end, eased);
     const { x: mx, y: my } = ptr.current;
     const drift = 1 - eased; // pointer parallax fades out as we arrive
-    s.setAttribute("viewBox", `${(cam.x - mx * 6 * drift).toFixed(2)} ${(cam.y - my * 4 * drift).toFixed(2)} ${cam.w.toFixed(2)} ${cam.h.toFixed(2)}`);
+    const cx = cam.x - mx * 6 * drift;
+    const cy = cam.y - my * 4 * drift;
+    const vb = `${cx.toFixed(2)} ${cy.toFixed(2)} ${cam.w.toFixed(2)} ${cam.h.toFixed(2)}`;
+    s.setAttribute("viewBox", vb);
+    glassSvg.current?.setAttribute("viewBox", vb);
+    // Where the window lands on screen (the city SVG uses slice, so scale by the larger ratio and centre).
+    const S = Math.max(vw / cam.w, vh / cam.h);
+    const bx = (vw - cam.w * S) / 2 + (BOX.x - cx) * S;
+    const by = (vh - cam.h * S) / 2 + (BOX.y - cy) * S;
+    const o = officeEl.current;
+    if (o) {
+      // The office layer's natural size is its size at the end of the zoom, so it is sharp when it arrives.
+      const base = BOX.w * Math.max(vw / end.w, vh / end.h);
+      if (Math.abs(base - officeW.current) > 0.5) {
+        officeW.current = base;
+        o.style.width = `${base.toFixed(1)}px`;
+        o.style.height = `${((base * SCENE.h) / SCENE.w).toFixed(1)}px`;
+      }
+      o.style.transform = `translate3d(${bx.toFixed(1)}px, ${by.toFixed(1)}px, 0) scale(${((BOX.w * S) / base).toFixed(5)})`;
+    }
 
     const set = (k: string, v: string, o?: number) => {
       const n = L[k] as HTMLElement | null;
@@ -132,7 +155,8 @@ export function Dawn() {
       }
     }
     const cap = layers.current.captionTime as HTMLElement | null;
-    if (cap) cap.textContent = fmtClock(hour);
+    const ct = fmtClock(hour);
+    if (cap && cap.textContent !== ct) cap.textContent = ct;
   });
   usePointer((x, y) => { ptr.current = { x, y }; if (prog.current < 0.95) render(); });
 
@@ -164,7 +188,11 @@ export function Dawn() {
         <div ref={scene} className="lp-dawn__scene">
         <div ref={lay("sky")} className="lp-dawn__sky" />
         <svg ref={lay("stars") as never} className="lp-dawn__stars" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true">
-          {city.stars.map((s, i) => <circle key={i} cx={s.x} cy={s.y} r={s.s * 0.09} style={{ animationDelay: `${s.d}s` }} />)}
+          {[0, 1, 2].map((g) => (
+            <g key={g} style={{ animationDelay: `${g * -1.35}s` }}>
+              {city.stars.filter((_, i) => i % 3 === g).map((s, i) => <circle key={i} cx={s.x} cy={s.y} r={s.s * 0.09} />)}
+            </g>
+          ))}
         </svg>
         <div ref={lay("glow")} className="lp-dawn__glow" />
         <div ref={lay("sun")} className="lp-dawn__sun" />
@@ -190,12 +218,6 @@ export function Dawn() {
               <stop offset="0" stopColor="#1a2336" />
               <stop offset="0.35" stopColor="#111a2a" />
               <stop offset="1" stopColor="#0b111d" />
-            </linearGradient>
-            <linearGradient id="tw-glass" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#fff" stopOpacity="0.16" />
-              <stop offset="0.4" stopColor="#fff" stopOpacity="0.02" />
-              <stop offset="0.55" stopColor="#fff" stopOpacity="0.1" />
-              <stop offset="1" stopColor="#fff" stopOpacity="0" />
             </linearGradient>
             <linearGradient id="tw-lit" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor="#ffd59a" />
@@ -225,13 +247,26 @@ export function Dawn() {
           {/* light spilling from the lit floor */}
           <ellipse cx={BOX.x + BOX.w / 2} cy={BOX.y + BOX.h / 2} rx={BOX.w * 0.95} ry={BOX.h * 1.2} fill="url(#tw-spill)" />
           <rect x={BOX.x - 14} y={BOX.y - 14} width={BOX.w + 28} height={BOX.h + 28} fill="#0a0f19" />
-          {/* the Rankcrew floor: the product's live office, at the office's own scale */}
-          <svg x={BOX.x} y={BOX.y} width={BOX.w} height={BOX.h} viewBox={`0 0 ${SCENE.w} ${SCENE.h}`} overflow="hidden">
+        </svg>
+
+        {/* The Rankcrew floor: the product's live office on its own GPU layer, moved by transform to sit in the window. */}
+        <div ref={officeEl} className="lp-dawn__office" aria-hidden="true">
+          <svg viewBox={`0 0 ${SCENE.w} ${SCENE.h}`} preserveAspectRatio="none" width="100%" height="100%">
             <g ref={office} className="office-scene lo" style={{ "--day": 0 } as React.CSSProperties}>
               {near && <OfficeWorld dark working={working} onDirector={(d) => { director.current = d; }} />}
             </g>
           </svg>
-          <g ref={lay("glass") as never} pointerEvents="none">
+        </div>
+        <svg ref={glassSvg} className="lp-dawn__glass" viewBox={`0 0 ${WORLD.w} ${WORLD.h}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <linearGradient id="tw-glass" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#fff" stopOpacity="0.16" />
+              <stop offset="0.4" stopColor="#fff" stopOpacity="0.02" />
+              <stop offset="0.55" stopColor="#fff" stopOpacity="0.1" />
+              <stop offset="1" stopColor="#fff" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <g ref={lay("glass") as never}>
             <rect x={BOX.x} y={BOX.y} width={BOX.w} height={BOX.h} fill="url(#tw-glass)" />
             {[1, 2, 3].map((i) => <rect key={i} x={BOX.x + (BOX.w / 4) * i - 1.5} y={BOX.y} width="3" height={BOX.h} fill="#0a0f19" />)}
             <rect x={BOX.x} y={BOX.y + BOX.h * 0.18} width={BOX.w} height="2.5" fill="#0a0f19" />
@@ -255,8 +290,8 @@ export function Dawn() {
           <h1 ref={title} id="dawn-title" className="lp-display lp-display--xl">Your SEO team starts<br /> before you do.</h1>
           <p className="lp-lede">Rankcrew is eleven AI employees who audit, fix and grow your site's search presence, then check what actually worked.</p>
           <div className="lp-actions">
-            <a className="lp-btn lp-btn--primary" href="#deploy">Deploy the crew</a>
-            <a className="lp-btn lp-btn--ghost" href="/login">Open console</a>
+            <Link className="lp-btn lp-btn--primary" to="/signup">Start free</Link>
+            <a className="lp-btn lp-btn--ghost" href="#pricing">See pricing</a>
           </div>
         </div>
 

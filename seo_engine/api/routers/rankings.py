@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from ...services import rankings
 from ...services import sites as site_service
 from ...workers.queue import enqueue
+from ..deps import require_credits
 
 router = APIRouter(tags=["rankings"])
 
@@ -43,7 +44,7 @@ async def keyword_history(site_id: int, keyword_id: int, days: int = 90):
     return await rankings.history(site_id, keyword_id, max(1, min(days, 365)))
 
 
-@router.post("/sites/{site_id}/keywords/check", status_code=202)
+@router.post("/sites/{site_id}/keywords/check", status_code=202, dependencies=[Depends(require_credits)])
 async def check_now(site_id: int):
     await site_service.get_site(site_id)
     return {"job_id": await enqueue("rank_check", site_id, dedupe=False)}

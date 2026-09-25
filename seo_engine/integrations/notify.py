@@ -79,24 +79,46 @@ async def send(cfg: IntegrationsConfig, title: str, body: str, *, url: str | Non
     return delivered
 
 
-async def notify_event(event: str, title: str, body: str, *, site_id: int | None = None, path: str = "",
-                       level: str = "info") -> list[str]:
-    """Fire-and-forget notification for a platform event, honouring the owner's event preferences."""
+async def notify_event(event: str, title: str, body: str, *, site_id: int | None = None,
+                       account_id: int | None = None, path: str = "", level: str = "info") -> list[str]:
+    """Fire-and-forget notification. Events about a customer's site go to that customer's own channels; platform
+    events (no account, or the operator workspace) go to the operator's channels."""
     try:
-        from ..db import Site, session_scope
+        from ..db import Account, Site, session_scope
         from ..services.integrations import get_integrations
 
-        cfg = await get_integrations()
+        site_name = None
+        async with session_scope() as s:
+            site = await s.get(Site, site_id) if site_id is not None else None
+            if site is not None:
+                site_name = site.name
+                account_id = account_id or site.account_id
+            acc = await s.get(Account, account_id) if account_id else None
+        if site_id is not None:
+            path = path or f"/sites/{site_id}/overview"
+        platform = await get_integrations()
+        if acc is not None and acc.kind == "customer":
+            from ..services.notifications import channel_config
+
+            _, cfg = await channel_config(acc.id)
+        else:
+            cfg = platform
         if not cfg.notifications_configured or event not in cfg.notify_events:
             return []
-        site_name = None
-        if site_id is not None:
-            async with session_scope() as s:
-                site = await s.get(Site, site_id)
-            site_name = site.name if site else None
-            path = path or f"/sites/{site_id}/overview"
-        url = f"{cfg.public_url.rstrip('/')}{path}" if cfg.public_url else None
+        url = f"{platform.public_url.rstrip('/')}{path}" if platform.public_url else None
         return await send(cfg, title, body[:3000], url=url, level=level, event=event, site=site_name)
     except Exception as exc:  # never break the caller
         log.warning("notify_event(%s) failed: %s", event, exc)
         return []
+
+
+async def send_email(to: str, subject: str, body: str) -> bool:
+    """Transactional email (sign-up, password reset) through the platform SMTP server. False when not configured."""
+    from ..services.integrations import get_integrations
+
+    platform = await get_integrations()
+    if not platform.smtp_host:
+        return False
+    cfg = platform.model_copy(update={"notify_email": to})
+    await asyncio.to_thread(_send_email, cfg, subject, body)
+    return True

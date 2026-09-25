@@ -103,5 +103,48 @@ def tick():
     console.print(json.dumps(asyncio.run(_tick())))
 
 
+@app.command("create-admin")
+def create_admin(email: str, password: str = typer.Option(..., prompt=True, hide_input=True, confirmation_prompt=True),
+                 name: str = ""):
+    """Create a platform operator (or promote an existing user). Operators manage platform settings."""
+    from sqlalchemy import func, update
+
+    from .db import User, session_scope
+    from .services import accounts
+    from .services.common import now
+
+    async def run():
+        existing = await accounts.user_by_email(email)
+        if existing is None:
+            user = await accounts.signup(email, password, name)
+            user_id = user.id
+        else:
+            user_id = existing.id
+        async with session_scope() as s:
+            await s.execute(update(User).where(User.id == user_id)
+                            .values(is_superuser=True, email_verified_at=func.coalesce(User.email_verified_at, now())))
+        return user_id
+
+    console.print(f"Operator ready: {email} (user {asyncio.run(run())})")
+
+
+@app.command("grant-credits")
+def grant_credits(email: str, credits: float, note: str = "Granted by operator"):
+    """Add credits to the workspace of the user with this email (negative to remove)."""
+    from .services import accounts
+    from .services import credits as credit_service
+
+    async def run():
+        user = await accounts.user_by_email(email)
+        if user is None:
+            raise typer.BadParameter(f"no user with email {email}")
+        mc = round(credits * credit_service.MC)
+        if mc > 0:
+            return await credit_service.add(user.account_id, mc, "grant", note=note)
+        return await credit_service.charge(user.account_id, -mc, "adjustment", note=note)
+
+    console.print(f"New balance: {credit_service.fmt(asyncio.run(run()) or 0)} credits")
+
+
 if __name__ == "__main__":
     app()

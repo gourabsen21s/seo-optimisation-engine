@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, auth, errorMessage } from "./api";
+import { api, ApiError, errorMessage } from "./api";
 import type {
   AutopilotMode,
   ConnectorType,
@@ -26,6 +26,10 @@ import type {
 // Query keys
 // ---------------------------------------------------------------------------
 export const qk = {
+  me: ["me"] as const,
+  billing: ["billing"] as const,
+  packs: ["packs"] as const,
+  accountNotify: ["account-notify"] as const,
   sites: ["sites"] as const,
   site: (id: number) => ["site", id] as const,
   audits: (siteId: number) => ["audits", siteId] as const,
@@ -87,8 +91,33 @@ export function invalidateSite(qc: QueryClient, siteId: number | null | undefine
 // ---------------------------------------------------------------------------
 // Auth / theme
 // ---------------------------------------------------------------------------
-export function useApiKey(): string | null {
-  return useSyncExternalStore(auth.subscribe, auth.getKey, auth.getKey);
+/** The signed-in user and workspace; null when signed out (a 401 is an answer, not an error). */
+export function useMe() {
+  return useQuery({
+    queryKey: qk.me,
+    queryFn: async () => {
+      try {
+        return await api.me();
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return null;
+        throw e;
+      }
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useBilling(enabled = true) {
+  return useQuery({ queryKey: qk.billing, queryFn: api.billing, enabled, staleTime: 10_000 });
+}
+
+export function usePacks() {
+  return useQuery({ queryKey: qk.packs, queryFn: api.packs, staleTime: 5 * 60_000 });
+}
+
+export function useAccountNotify() {
+  return useQuery({ queryKey: qk.accountNotify, queryFn: api.accountNotifications });
 }
 
 export type Theme = "light" | "dark" | "system";
@@ -229,8 +258,8 @@ export function useRequirements() {
 const isLive = (t: Pick<Task, "status">) => t.status === "todo" || t.status === "in_progress";
 
 export function useRoster() {
-  const key = useApiKey();
-  return useQuery({ queryKey: [...qk.roster, !!key], queryFn: api.roster, staleTime: Infinity, retry: false, enabled: !!key });
+  const signedIn = !!useMe().data;
+  return useQuery({ queryKey: [...qk.roster, signedIn], queryFn: api.roster, staleTime: Infinity, retry: false, enabled: signedIn });
 }
 
 export function useTeam(siteId: number) {
@@ -454,7 +483,9 @@ export function useCreateSite() {
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: qk.sites });
       if (res.job_id != null) jobTracker.track(res.site.id, res.job_id);
-      toast.success(`Added ${res.site.name || res.site.url}`, { description: res.job_id ? "First audit started." : undefined });
+      qc.invalidateQueries({ queryKey: qk.me });
+      if (res.audit_blocked) toast.warning(`Added ${res.site.name || res.site.url}`, { description: `The first audit is waiting: ${res.audit_blocked}` });
+      else toast.success(`Added ${res.site.name || res.site.url}`, { description: res.job_id ? "First audit started." : undefined });
     },
     onError: (e) => toast.error("Could not add site", { description: errorMessage(e) }),
   });

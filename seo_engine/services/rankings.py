@@ -105,6 +105,15 @@ async def check_rankings(site_id: int, report: JobReporter | None = None) -> dic
     snapshots: list[RankSnapshot] = []
     errors = 0
     if cfg.serp_configured:
+        from . import credits
+
+        # Live results cost money per query, so they are metered; Search Console below is free.
+        await credits.ensure(site.account_id, minimum_mc=credits.price_rank_keywords(1))
+        if await credits.is_metered(site.account_id):
+            afford = await credits.balance(site.account_id) // max(1, credits.price_rank_keywords(1))
+            if afford < len(keywords) and report:
+                await report.warn(f"Credits cover {afford} of {len(keywords)} keywords today")
+            keywords = keywords[:max(0, afford)]
         if report:
             await report(f"Checking {len(keywords)} keyword rankings via {cfg.serp_provider}")
         for k in keywords:
@@ -121,6 +130,9 @@ async def check_rankings(site_id: int, report: JobReporter | None = None) -> dic
                 url=hit.url if hit else None, source=cfg.serp_provider,
                 competitors=[{"position": r.position, "domain": r.domain, "url": r.url, "title": r.title[:120]}
                              for r in page.results[:10]]))
+        if snapshots and await credits.is_metered(site.account_id):
+            await credits.charge(site.account_id, credits.price_rank_keywords(len(snapshots)), "rank_check",
+                                 site_id=site_id, note=f"{len(snapshots)} keywords")
     else:
         gsc = gsc_for(site)
         if gsc is None:

@@ -425,7 +425,36 @@ export type TaskPatch = { assignee?: EmployeeId; priority?: TaskPriority; status
 // ---- request / response shapes ----
 export type AuthCheck = { ok: true; environment: string };
 export type CreateSiteBody = { url: string; name?: string; autopilot?: AutopilotMode; start_audit?: boolean };
-export type CreateSiteResponse = { site: Site; job_id: number | null };
+export type CreateSiteResponse = { site: Site; job_id: number | null; audit_blocked?: string | null };
+
+// ── accounts & billing ───────────────────────────────────────────────────────
+export type Me = {
+  user: { id: number; email: string; name: string; role: "owner" | "member"; email_verified: boolean; created_at: string } | null;
+  account: { id: number; name: string; kind: "customer" | "operator"; credits: number; metered: boolean };
+  is_superuser: boolean;
+  via: "session" | "api_key";
+  require_verification: boolean;
+  billing_enabled: boolean;
+};
+export type SignupBody = { email: string; password: string; name?: string; company?: string; accept_terms: boolean };
+export type Pack = { id: string; name: string; credits: number; price_cents: number; note: string };
+export type PriceRow = { item: string; unit: string; credits: number };
+export type PacksInfo = { currency: string; enabled: boolean; signup_credits: number; packs: Pack[]; prices: PriceRow[] };
+export type LedgerEntry = { id: number; at: string; amount: number; balance: number; reason: string; note: string; site_id: number | null; site: string | null };
+export type Purchase = { id: number; pack_id: string; credits: number; amount_cents: number; currency: string; status: "pending" | "paid" | "expired" | "failed"; created_at: string; paid_at: string | null };
+export type BillingOverview = PacksInfo & {
+  credits: number;
+  metered: boolean;
+  purchases: Purchase[];
+  ledger: LedgerEntry[];
+  spend: { days: number; by_reason: Record<string, number> };
+};
+export type AccountNotify = {
+  email_members: boolean; extra_emails: string[]; events: string[]; all_events: string[];
+  slack_webhook_set: boolean; notify_webhook_set: boolean; email_available: boolean;
+};
+export type AccountNotifyUpdate = Partial<{ email_members: boolean; extra_emails: string[]; events: string[]; slack_webhook_url: string; notify_webhook_url: string }>;
+export type AdminAccount = { id: number; name: string; kind: string; status: string; credits: number; owner: string | null; sites: number; created_at: string };
 export type SitePatch = Partial<{
   name: string;
   profile: Partial<SiteProfile>;

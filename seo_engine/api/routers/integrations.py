@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ...code.aider import aider_binary
 from ...services import budget
 from ...services import integrations as integration_service
+from ..deps import require_superuser
 
 router = APIRouter(tags=["integrations"])
 
@@ -16,23 +17,23 @@ class IntegrationTestIn(BaseModel):
     target: Literal["serp", "openpagerank", "pagespeed", "notify"]
 
 
-@router.get("/settings/integrations")
+@router.get("/settings/integrations", dependencies=[Depends(require_superuser)])
 async def get_integrations():
     return await integration_service.public()
 
 
-@router.put("/settings/integrations")
+@router.put("/settings/integrations", dependencies=[Depends(require_superuser)])
 async def put_integrations(body: integration_service.IntegrationsUpdate):
     await integration_service.update(body)
     return await integration_service.public()
 
 
-@router.post("/settings/integrations/test")
+@router.post("/settings/integrations/test", dependencies=[Depends(require_superuser)])
 async def test_integration(body: IntegrationTestIn):
     return await integration_service.test(body.target)
 
 
-@router.get("/settings/usage")
+@router.get("/settings/usage", dependencies=[Depends(require_superuser)])
 async def usage(days: int = 30):
     return await budget.usage_summary(max(1, min(days, 90)))
 

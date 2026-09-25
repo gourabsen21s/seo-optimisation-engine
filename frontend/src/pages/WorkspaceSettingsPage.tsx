@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { Bot, CheckCircle2, ChevronDown, Cpu, KeyRound, Save, ShieldCheck, XCircle, Zap } from "lucide-react";
 import { Pill } from "@/components/common/badges";
 import { PageHeader } from "@/components/common/blocks";
@@ -15,12 +15,13 @@ import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AccountsTab } from "@/features/settings/AccountsTab";
 import { CodeTab } from "@/features/settings/CodeTab";
 import { IntegrationsTab } from "@/features/settings/IntegrationsTab";
 import { NotificationsTab } from "@/features/settings/NotificationsTab";
 import { UsageTab } from "@/features/settings/UsageTab";
 import { api, errorMessage } from "@/lib/api";
-import { useIntegrations, useSettings, useUpdateSettings } from "@/lib/hooks";
+import { useIntegrations, useMe, useSettings, useUpdateSettings } from "@/lib/hooks";
 import type { LLMTestResult, Provider } from "@/lib/types";
 
 const providerOf = (model: string) => (model.includes(":") ? model.split(":")[0] : "custom");
@@ -85,6 +86,13 @@ function ModelFields({ providers, model, setModel, apiKey, setApiKey, keySet, ba
 }
 
 export default function WorkspaceSettingsPage() {
+  const me = useMe().data;
+  // Platform settings are for operators; customers manage their own account instead.
+  if (me && !me.is_superuser) return <Navigate to="/account" replace />;
+  return <PlatformSettings />;
+}
+
+function PlatformSettings() {
   const settings = useSettings();
   const integrations = useIntegrations();
   const update = useUpdateSettings();
@@ -108,7 +116,7 @@ export default function WorkspaceSettingsPage() {
   const pending = <div className="grid gap-4"><Skeleton className="h-64" /><Skeleton className="h-48" /></div>;
   return (
     <div className="grid max-w-5xl gap-6">
-      <PageHeader icon={<Cpu />} title="Workspace settings" description="AI models, research integrations, notifications and spending for your whole crew." />
+      <PageHeader icon={<Cpu />} title="Platform settings" description="Operator only: the AI models, research integrations, email server and spending limits every customer's crew runs on." />
       <Tabs value={tab} onValueChange={(v) => setParams((prev) => { const n = new URLSearchParams(prev); n.set("tab", v); return n; }, { replace: true })} className="gap-6">
         <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
           <TabsList>
@@ -117,12 +125,14 @@ export default function WorkspaceSettingsPage() {
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="usage">Usage &amp; budget</TabsTrigger>
             <TabsTrigger value="code">Code edits</TabsTrigger>
+            <TabsTrigger value="accounts">Customers</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="integrations">{i ? <IntegrationsTab data={i} /> : pending}</TabsContent>
         <TabsContent value="notifications">{i ? <NotificationsTab data={i} /> : pending}</TabsContent>
         <TabsContent value="usage">{i ? <UsageTab data={i} /> : pending}</TabsContent>
         <TabsContent value="code">{i ? <CodeTab data={i} /> : pending}</TabsContent>
+        <TabsContent value="accounts"><AccountsTab /></TabsContent>
         <TabsContent value="models" className="grid gap-6">
       <Card className="shadow-xs">
         <CardHeader>

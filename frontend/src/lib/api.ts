@@ -3,7 +3,13 @@ import type {
   AgentRun,
   Audit,
   AuditSummary,
-  AuthCheck,
+  AccountNotify,
+  AccountNotifyUpdate,
+  AdminAccount,
+  BillingOverview,
+  Me,
+  PacksInfo,
+  SignupBody,
   ChatResponse,
   ChatEntry,
   ConnectorField,
@@ -44,54 +50,24 @@ import type {
   UsageSummary,
 } from "./types";
 
-const KEY_STORAGE = "seo-engine-api-key";
 export const API_BASE = "/api";
 
 // ---------------------------------------------------------------------------
-// API key store (localStorage + subscribers, usable with useSyncExternalStore)
+// Session events. The session itself lives in an HttpOnly cookie the page cannot read; the client only hears
+// when the server says it is gone (401), out of credits (402) or waiting on email verification.
 // ---------------------------------------------------------------------------
-type Listener = () => void;
+export type SessionEvent = "unauthorized" | "credits" | "unverified";
+type Listener = (e: SessionEvent, detail: string) => void;
 const listeners = new Set<Listener>();
-
-function readKey(): string | null {
-  try {
-    return localStorage.getItem(KEY_STORAGE);
-  } catch {
-    return null;
-  }
-}
-
-let currentKey: string | null = readKey();
-
-export const auth = {
-  getKey: () => currentKey,
-  setKey(key: string | null) {
-    currentKey = key;
-    try {
-      if (key) localStorage.setItem(KEY_STORAGE, key);
-      else localStorage.removeItem(KEY_STORAGE);
-    } catch {
-      /* storage unavailable */
-    }
-    listeners.forEach((l) => l());
-  },
-  logout() {
-    auth.setKey(null);
-  },
-  subscribe(l: Listener) {
+export const sessionEvents = {
+  on(l: Listener) {
     listeners.add(l);
-    return () => listeners.delete(l);
+    return () => { listeners.delete(l); };
+  },
+  emit(e: SessionEvent, detail = "") {
+    listeners.forEach((l) => l(e, detail));
   },
 };
-
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (e) => {
-    if (e.key === KEY_STORAGE) {
-      currentKey = e.newValue;
-      listeners.forEach((l) => l());
-    }
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -99,11 +75,13 @@ if (typeof window !== "undefined") {
 export class ApiError extends Error {
   status: number;
   detail: string;
-  constructor(status: number, detail: string) {
+  code: string | null;
+  constructor(status: number, detail: string, code: string | null = null) {
     super(detail || `Request failed (${status})`);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -143,9 +121,8 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | boolean | null | undefined>;
-  key?: string | null;
   signal?: AbortSignal;
-  /** Skip the global logout-on-401 behaviour (used by the login form). */
+  /** Skip the global signed-out handling for a 401 (the session check and sign-in forms). */
   noAuthRedirect?: boolean;
 };
 
@@ -163,9 +140,8 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
 }
 
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  const key = opts.key !== undefined ? opts.key : currentKey;
-  if (key) headers["X-API-Key"] = key;
+  // The custom header is our CSRF guard: a cross-site form cannot set it.
+  const headers: Record<string, string> = { Accept: "application/json", "X-Requested-With": "rankcrew" };
   let body: BodyInit | undefined;
   if (opts.body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -174,7 +150,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 
   let res: Response;
   try {
-    res = await fetch(buildUrl(path, opts.query), { method: opts.method ?? "GET", headers, body, signal: opts.signal });
+    res = await fetch(buildUrl(path, opts.query), { method: opts.method ?? "GET", headers, body, signal: opts.signal, credentials: "same-origin" });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ApiError(0, "Cannot reach the server. Is the backend running?");
@@ -193,26 +169,50 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   }
 
   if (!res.ok) {
-    // Only log out if this request used the key that's still active — a stale 401 (e.g. a request sent
-    // before login finished) must not wipe a freshly entered key.
-    if (res.status === 401 && !opts.noAuthRedirect && key && key === currentKey) auth.logout();
-    throw new ApiError(res.status, extractDetail(parsed, res.statusText || `HTTP ${res.status}`));
+    const detail = extractDetail(parsed, res.statusText || `HTTP ${res.status}`);
+    const code = parsed && typeof parsed === "object" && "code" in parsed ? (parsed as { code: unknown }).code : null;
+    if (res.status === 401 && !opts.noAuthRedirect) sessionEvents.emit("unauthorized", detail);
+    else if (res.status === 402) sessionEvents.emit("credits", detail);
+    else if (res.status === 403 && code === "email_not_verified") sessionEvents.emit("unverified", detail);
+    throw new ApiError(res.status, detail, typeof code === "string" ? code : null);
   }
   return parsed as T;
 }
 
-/** URL with the API key as a query parameter (for downloads / EventSource). */
+/** URL for downloads / EventSource (the session cookie authenticates them). */
 export function authedUrl(path: string, query: Record<string, string> = {}): string {
-  const params = new URLSearchParams(query);
-  if (currentKey) params.set("api_key", currentKey);
-  return `${API_BASE}${path}?${params.toString()}`;
+  const qs = new URLSearchParams(query).toString();
+  return `${API_BASE}${path}${qs ? `?${qs}` : ""}`;
 }
 
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
 export const api = {
-  checkAuth: (key: string) => request<AuthCheck>("/auth/check", { key, noAuthRedirect: true }),
+  // account & session
+  me: () => request<Me>("/auth/me", { noAuthRedirect: true }),
+  signup: (body: SignupBody) => request<Me & { dev_verify_url: string | null }>("/auth/signup", { method: "POST", body, noAuthRedirect: true }),
+  login: (email: string, password: string) => request<Me>("/auth/login", { method: "POST", body: { email, password }, noAuthRedirect: true }),
+  logout: () => request<void>("/auth/logout", { method: "POST", noAuthRedirect: true }),
+  verifyEmail: (token: string) => request<{ ok: boolean; email: string }>("/auth/verify-email", { method: "POST", body: { token }, noAuthRedirect: true }),
+  resendVerification: () => request<{ ok: boolean; already_verified?: boolean; dev_verify_url?: string | null }>("/auth/resend-verification", { method: "POST" }),
+  forgotPassword: (email: string) => request<{ ok: boolean; dev_reset_url?: string | null }>("/auth/forgot-password", { method: "POST", body: { email }, noAuthRedirect: true }),
+  resetPassword: (token: string, password: string) => request<Me>("/auth/reset-password", { method: "POST", body: { token, password }, noAuthRedirect: true }),
+  changePassword: (current_password: string, new_password: string) => request<{ ok: boolean }>("/auth/change-password", { method: "POST", body: { current_password, new_password } }),
+  updateProfile: (body: { name?: string; account_name?: string }) => request<Me>("/auth/profile", { method: "PATCH", body }),
+  deleteAccount: (password: string) => request<void>("/auth/delete-account", { method: "POST", body: { password } }),
+
+  // billing
+  packs: () => request<PacksInfo>("/billing/packs", { noAuthRedirect: true }),
+  billing: () => request<BillingOverview>("/billing"),
+  checkout: (pack_id: string) => request<{ url: string }>("/billing/checkout", { method: "POST", body: { pack_id } }),
+  accountNotifications: () => request<AccountNotify>("/account/notifications"),
+  updateAccountNotifications: (body: AccountNotifyUpdate) => request<AccountNotify>("/account/notifications", { method: "PUT", body }),
+  testAccountNotifications: () => request<{ ok: boolean; message: string }>("/account/notifications/test", { method: "POST" }),
+  accountUsage: (days = 30) => request<UsageSummary & { spend: { days: number; by_reason: Record<string, number> } }>("/account/usage", { query: { days } }),
+  adminAccounts: (q = "") => request<AdminAccount[]>("/admin/accounts", { query: { q } }),
+  adminGrant: (id: number, credits: number, note: string) => request<{ credits: number }>(`/admin/accounts/${id}/credits`, { method: "POST", body: { credits, note } }),
+
 
   // sites
   listSites: () => request<Site[]>("/sites"),

@@ -21,10 +21,17 @@ from ..core.logging import configure_logging
 from ..core.security import UnsafeURLError
 from ..db import create_all
 from ..db.session import get_engine
+from ..services.accounts import AuthError, Conflict
+from ..services.billing import BillingUnavailable
 from ..services.common import NotFound, ServiceError
+from ..services.credits import EmailNotVerified, InsufficientCredits
 from ..workers import queue, scheduler
-from .deps import require_api_key
-from .routers import agent, audits, fixes, integrations, jobs, rankings, settings, sites, team
+from .deps import require_resource_access
+from .routers import agent, audits, auth, billing, fixes, integrations, jobs, rankings, settings, sites, team
+
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+       "base-uri 'self'; object-src 'none'; form-action 'self' https://checkout.stripe.com")
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +53,11 @@ async def lifespan(app: FastAPI):
         await create_all()  # production runs `seo-engine migrate` (Alembic) before start
     if not cfg.secret_key:
         log.warning("SEO_SECRET_KEY is not set — saving credentials will fail")
+    if cfg.environment == "production":
+        if not cfg.public_url:
+            log.warning("SEO_PUBLIC_URL is not set: sign-up and password-reset emails will have no links")
+        if not cfg.stripe_secret_key or not cfg.stripe_webhook_secret:
+            log.warning("Stripe is not configured: customers cannot buy credits")
     stop = asyncio.Event()
     sched_task = None
     if cfg.scheduler_enabled and not cfg.redis_url:
@@ -66,9 +78,45 @@ def create_app() -> FastAPI:
     if cfg.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=cfg.cors_origins, allow_methods=["*"], allow_headers=["*"])
 
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        h = response.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if not request.url.path.startswith(("/api/docs", "/api/openapi")):
+            h.setdefault("Content-Security-Policy", CSP)
+        if cfg.environment == "production":
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if request.url.path.startswith("/api/"):
+            h.setdefault("Cache-Control", "no-store")
+        return response
+
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):
         return JSONResponse({"detail": str(exc)}, status_code=404)
+
+    @app.exception_handler(InsufficientCredits)
+    async def payment_required(_: Request, exc: InsufficientCredits):
+        return JSONResponse({"detail": str(exc), "code": "insufficient_credits"}, status_code=402)
+
+    @app.exception_handler(EmailNotVerified)
+    async def unverified(_: Request, exc: EmailNotVerified):
+        return JSONResponse({"detail": str(exc), "code": "email_not_verified"}, status_code=403)
+
+    @app.exception_handler(AuthError)
+    async def auth_failed(_: Request, exc: AuthError):
+        return JSONResponse({"detail": str(exc)}, status_code=401)
+
+    @app.exception_handler(Conflict)
+    async def conflict(_: Request, exc: Conflict):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(BillingUnavailable)
+    async def billing_off(_: Request, exc: BillingUnavailable):
+        return JSONResponse({"detail": str(exc)}, status_code=503)
 
     @app.exception_handler(ServiceError)
     @app.exception_handler(ConnectorError)
@@ -76,9 +124,13 @@ def create_app() -> FastAPI:
     async def bad_request(_: Request, exc: Exception):
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
-    protected = [Depends(require_api_key)]
+    # Public: sign-up / sign-in (each endpoint declares its own guards), credit packs, the Stripe webhook.
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(billing.public, prefix="/api")
+    # Everything else needs a principal, and any site / job / audit / task / fix in the path must be theirs.
+    protected = [Depends(require_resource_access)]
     for r in (sites.router, audits.router, fixes.router, agent.router, jobs.router, settings.router, team.router,
-              integrations.router, rankings.router):
+              integrations.router, rankings.router, billing.router):
         app.include_router(r, prefix="/api", dependencies=protected)
 
     @app.get("/healthz", include_in_schema=False)

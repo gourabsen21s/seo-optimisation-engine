@@ -18,7 +18,8 @@ from .common import secret_box
 KEY = "integrations"
 SECRET_FIELDS = ("serp_api_key", "openpagerank_api_key", "pagespeed_api_key", "indexnow_key", "slack_webhook_url",
                  "notify_webhook_url", "smtp_password")
-EVENTS = ("task_blocked", "cycle_finished", "rollback", "job_failed", "budget_reached", "agent_message")
+EVENTS = ("task_blocked", "cycle_finished", "rollback", "job_failed", "budget_reached", "agent_message",
+          "credits_exhausted")
 
 
 class IntegrationsConfig(BaseModel):

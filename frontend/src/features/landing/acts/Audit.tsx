@@ -105,17 +105,24 @@ export function Audit() {
         if (!cur || SEV_RANK[f.s] > SEV_RANK[cur]) sev[idx] = f.s;
       }
     });
+    // Only touch what changed: this runs every scroll frame across 56 paths and dots.
     nodes.forEach((n, j) => {
       const t = clamp01(shown - j);
       const e = edges.current[j];
-      if (e) e.style.strokeDashoffset = ((1 - t) * n.len).toFixed(1);
+      const off = ((1 - t) * n.len).toFixed(1);
+      if (e && e.style.strokeDashoffset !== off) e.style.strokeDashoffset = off;
       const d = dots.current[j];
       if (d) {
-        d.style.opacity = t > 0.9 ? "1" : "0";
-        d.dataset.sev = sev[j] ?? "";
+        const op = t > 0.9 ? "1" : "0";
+        if (d.style.opacity !== op) d.style.opacity = op;
+        const sv = sev[j] ?? "";
+        if (d.dataset.sev !== sv) d.dataset.sev = sv;
       }
     });
-    lines.current.forEach((li, j) => { if (li) li.dataset.on = j < lit ? "true" : "false"; });
+    lines.current.forEach((li, j) => {
+      const on = j < lit ? "true" : "false";
+      if (li && li.dataset.on !== on) li.dataset.on = on;
+    });
     const pages = Math.round(crawl * CRAWLED.length);
     const set = (k: string, v: string) => { const el = q.current[k]; if (el && el.textContent !== v) el.textContent = v; };
     set("pages", String(pages));
@@ -124,11 +131,13 @@ export function Audit() {
     const score = Math.round(judge * SAMPLE.scores.overall);
     set("score", String(score));
     const ring = q.current.ring as SVGCircleElement | null;
-    if (ring) ring.style.strokeDashoffset = (RING * (1 - score / 100)).toFixed(1);
+    const ro = (RING * (1 - score / 100)).toFixed(1);
+    if (ring && ring.style.strokeDashoffset !== ro) ring.style.strokeDashoffset = ro;
     const cur = CRAWLED[Math.min(CRAWLED.length - 1, Math.floor(shown))];
     set("log", crawl < 1 ? `GET ${cur.length > 58 ? `${cur.slice(0, 57)}…` : cur}` : `Crawl complete · ${CRAWLED.length} pages · ${SAMPLE.crawlSeconds}s`);
     const log = q.current.logWrap as HTMLElement | null;
-    if (log) log.dataset.done = crawl >= 1 ? "true" : "false";
+    const done = crawl >= 1 ? "true" : "false";
+    if (log && log.dataset.done !== done) log.dataset.done = done;
   });
 
   return (
