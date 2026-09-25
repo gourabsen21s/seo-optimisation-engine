@@ -11,6 +11,7 @@ import { useSites } from "@/lib/hooks";
 import { useCurrentSite } from "@/lib/useCurrentSite";
 import { AppSidebar } from "./AppSidebar";
 import { CommandMenu } from "./CommandMenu";
+import { DayStrip } from "./DayStrip";
 import { sectionMeta } from "./nav";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -23,7 +24,7 @@ function Crumbs() {
   return (
     <Breadcrumb>
       <BreadcrumbList>
-        <BreadcrumbItem className="hidden sm:block"><BreadcrumbLink asChild><Link to="/">Websites</Link></BreadcrumbLink></BreadcrumbItem>
+        <BreadcrumbItem className="hidden sm:block"><BreadcrumbLink asChild><Link to="/sites">Websites</Link></BreadcrumbLink></BreadcrumbItem>
         {site && (
           <>
             <BreadcrumbSeparator className="hidden sm:block" />
@@ -69,7 +70,7 @@ function PageTransition({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   useGSAP(() => {
     if (!ref.current || prefersReducedMotion()) return;
-    gsap.fromTo(ref.current, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.25, ease: "power1.out", clearProps: "transform,opacity,visibility" });
+    gsap.fromTo(ref.current, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.45, ease: "expo.out", clearProps: "transform,opacity,visibility" });
   }, { dependencies: [pathname] });
   return <div ref={ref} className="flex flex-1 flex-col">{children}</div>;
 }
@@ -87,7 +88,8 @@ export function AppShell() {
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
             <Crumbs />
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-3">
+              <DayStrip />
               <RunningJobs />
               <CommandMenu />
               <ThemeToggle />

@@ -1,11 +1,15 @@
 import { memo, useEffect, useState } from "react";
-import type { Persona } from "@/features/team/employees";
+import { PERSONAS, type Persona } from "@/features/team/employees";
 import { BRAND } from "@/config/brand";
 import type { EmployeeId } from "@/lib/types";
 import { SCENE, WALL_H, WINDOWS, ZONES } from "./layout";
 
 const FONT = { fontFamily: "var(--font-sans)" } as const;
 const MONO = { fontFamily: "var(--font-mono, ui-monospace, monospace)" } as const;
+
+/** Colours that get a screen glow; each has its own radial gradient in SceneDefs (a blur filter costs far more to repaint). */
+const GLOW_COLORS = [...new Set([...Object.values(PERSONAS).map((p) => p.from), "#f59e0b", "#2dd4bf"])];
+const glowFill = (c: string) => `url(#glow-${c.replace("#", "")})`;
 
 /** Soft contact shadow (radial gradient, cheap compared to filters). */
 export function Shadow({ x, y, rx, ry = rx * 0.22, o = 1 }: { x: number; y: number; rx: number; ry?: number; o?: number }) {
@@ -274,7 +278,7 @@ function Monitor({ x, y, persona, working, blocked, id, w = 46, h = 34, i = 0 }:
   const clip = `scr-${id}-${i}`;
   return (
     <g>
-      {(working || blocked) && <ellipse cx={x} cy={sy + h / 2} rx={w * 0.78} ry={h * 0.78} fill={blocked ? "#f59e0b" : persona.from} className="office-glow" filter="url(#soft-blur)" />}
+      {(working || blocked) && <ellipse cx={x} cy={sy + h / 2} rx={w} ry={h} fill={glowFill(blocked ? "#f59e0b" : persona.from)} className="office-glow" />}
       <rect x={x - 3} y={y - 9} width="6" height="8" fill="#6b6478" />
       <rect x={x - 11} y={y - 2.5} width="22" height="3.5" rx="1.75" fill="#57506a" />
       <rect x={sx - 3} y={sy - 3} width={w + 6} height={h + 6} rx="4" fill="#2d2838" />
@@ -472,7 +476,7 @@ export function Terminal({ x, y, active, onClick, label }: { x: number; y: numbe
       <rect x={l} y={y - 22} width={w} height="9" rx="3" fill="#3a3552" />
       <rect x={l + 6} y={y - 14} width={w - 12} height="2" rx="1" fill="#2dd4bf" opacity={active ? 0.95 : 0.35} className={active ? "office-glow-strong" : undefined} />
       {/* wide monitor */}
-      {active && <ellipse cx={mx} cy={sy + 20} rx="46" ry="30" fill="#2dd4bf" className="office-glow" filter="url(#soft-blur)" />}
+      {active && <ellipse cx={mx} cy={sy + 20} rx="60" ry="40" fill={glowFill("#2dd4bf")} className="office-glow" />}
       <rect x={mx - 3} y={y - 43} width="6" height="9" fill="#6b6478" />
       <rect x={mx - 12} y={y - 36} width="24" height="3.5" rx="1.75" fill="#57506a" />
       <rect x={mx - 30} y={sy - 3} width="60" height="44" rx="5" fill="#221e36" />
@@ -847,7 +851,7 @@ export const SceneDefs = memo(function SceneDefs() {
       <linearGradient id="sky-night" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1a1740" /><stop offset="100%" stopColor="#4a2c7a" /></linearGradient>
       <linearGradient id="glass-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#fff" stopOpacity="0.35" /><stop offset="35%" stopColor="#fff" stopOpacity="0" /><stop offset="60%" stopColor="#fff" stopOpacity="0" /><stop offset="70%" stopColor="#fff" stopOpacity="0.12" /><stop offset="80%" stopColor="#fff" stopOpacity="0" /></linearGradient>
       <linearGradient id="window-light" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fff8e1" stopOpacity="0.55" /><stop offset="100%" stopColor="#fff8e1" stopOpacity="0" /></linearGradient>
-      <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#6c7cf0" /><stop offset="60%" stopColor="#c026d3" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient>
+      <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#ffc46b" /><stop offset="55%" stopColor="#ff8a3d" /><stop offset="100%" stopColor="#d9531c" /></linearGradient>
       <linearGradient id="screen-glare" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#fff" stopOpacity="0.22" /><stop offset="42%" stopColor="#fff" stopOpacity="0" /></linearGradient>
       <linearGradient id="amber-screen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient>
       <linearGradient id="chair-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fff" stopOpacity="0.2" /><stop offset="100%" stopColor="#000" stopOpacity="0.2" /></linearGradient>
@@ -856,7 +860,13 @@ export const SceneDefs = memo(function SceneDefs() {
       <radialGradient id="lamp-glow"><stop offset="0%" stopColor="#ffd98a" stopOpacity="0.32" /><stop offset="100%" stopColor="#ffd98a" stopOpacity="0" /></radialGradient>
       <radialGradient id="teal-glow"><stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.22" /><stop offset="100%" stopColor="#2dd4bf" stopOpacity="0" /></radialGradient>
       {WINDOWS.map((x, i) => <clipPath key={x} id={`win-clip-${i}`}><rect x={x - 75} y="16" width="150" height="78" rx="3" /></clipPath>)}
-      <filter id="soft-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" /></filter>
+      {GLOW_COLORS.map((c) => (
+        <radialGradient key={c} id={`glow-${c.replace("#", "")}`}>
+          <stop offset="0%" stopColor={c} stopOpacity="0.9" />
+          <stop offset="45%" stopColor={c} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={c} stopOpacity="0" />
+        </radialGradient>
+      ))}
       <filter id="bubble-shadow" x="-20%" y="-40%" width="140%" height="190%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.8" floodColor="#1e1030" floodOpacity="0.18" /></filter>
       <pattern id="floor-planks" width="320" height="44" patternUnits="userSpaceOnUse">
         <rect width="320" height="44" fill="var(--office-floor)" />

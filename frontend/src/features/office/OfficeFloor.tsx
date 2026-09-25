@@ -15,11 +15,9 @@ import type { Activity, EmployeeId, TeamMember, TeamMemberStatus } from "@/lib/t
 import { cn } from "@/lib/utils";
 import { Character, type CharacterParts, Overlay } from "./Character";
 import { OfficeDirector } from "./director";
-import {
-  ArmchairBack, ArmchairFront, Bookshelf, Chair, CoffeeCounter, Credenza, DeployKiosk, Desk, Floor, FloorLamp, Foosball, GlassOfficeBack, GlassOfficeFront,
-  MeetingTable, Plant, Planter, SceneDefs, ServerRack, SofaBack, SofaFront, Terminal, Wall, WaterCooler,
-} from "./Furniture";
-import { DESKS, MEETING, NODES, SCENE, WALKWAYS } from "./layout";
+import { Floor, GlassOfficeBack, SceneDefs, Wall } from "./Furniture";
+import { NODES, SCENE, WALKWAYS } from "./layout";
+import { OfficeDecor, OfficeDesks } from "./OfficeProps";
 import "./office.css";
 
 const MEETING_TASK = /plan|review the cycle/i;
@@ -418,74 +416,18 @@ export function OfficeFloor({ siteId, members, activity, counts, showNames = tru
         <GlassOfficeBack />
 
         <g ref={depthRef}>
-          {EMPLOYEE_IDS.map((id) => {
-            const d = DESKS[id];
-            const p = persona(id);
-            const s = status(id);
-            const label = `${dir.name(id)}'s ${d.kind === "terminal" ? "console" : "desk"} — ${ASSIGNABLE_IDS.includes(id) ? "assign a task" : "open profile"}`;
-            if (d.kind === "terminal") {
-              return [
-                <g key={`c-${id}`} data-baseline={d.seat.y - 1}><Chair x={d.seat.x} y={d.seat.y} color="#14b8a6" dark={dark} /></g>,
-                <g key={`t-${id}`} data-baseline={d.y}>
-                  <Terminal x={d.x} y={d.y} active={s === "working"} label={label} onClick={() => select(id)} />
-                </g>,
-              ];
-            }
-            return [
-              <g key={`c-${id}`} data-baseline={d.seat.y - 1}><Chair x={d.seat.x} y={d.seat.y} color={p.from} dark={dark} /></g>,
-              <g key={`d-${id}`} data-baseline={d.y}>
-                <Desk id={id} x={d.x} y={d.y} persona={p} kind={d.kind} working={s === "working"} blocked={s === "blocked"} dark={dark} label={label} onClick={(e) => openDeskMenu(id, e)} />
-              </g>,
-            ];
-          })}
-
-          {/* manager office */}
-          <g data-baseline={205}><Credenza x={170} y={205} /></g>
-          <g data-baseline={214}><Plant x={292} y={214} variant="tall" s={0.9} /></g>
-          <g data-baseline={408}><Plant x={52} y={408} variant="round" s={0.8} /></g>
-          <g data-baseline={418}><GlassOfficeFront /></g>
-          {/* library */}
-          <g data-baseline={572}><Bookshelf x={96} y={572} seed={0} /></g>
-          <g data-baseline={572}><Bookshelf x={214} y={572} seed={3} /></g>
-          <g data-baseline={745}><ArmchairBack x={104} y={750} /></g>
-          <g data-baseline={761}><ArmchairFront x={104} y={760} /></g>
-          <g data-baseline={730}><FloorLamp x={36} y={730} /></g>
-          <g data-baseline={700}><Plant x={318} y={700} variant="leafy" s={0.85} /></g>
-          <g data-baseline={846}><Plant x={44} y={846} variant="cactus" s={0.8} /></g>
-          {/* window-side plants */}
-          <g data-baseline={166}><Plant x={404} y={166} variant="leafy" s={0.75} /></g>
-          <g data-baseline={166}><Plant x={1010} y={166} variant="tall" s={0.72} /></g>
-          {/* engineering */}
-          <g data-baseline={236}><ServerRack x={1212} y={236} /></g>
-          <g data-baseline={236}><ServerRack x={1268} y={236} /></g>
-          <g data-baseline={186}><Plant x={1406} y={186} variant="cactus" s={0.7} /></g>
-          <g data-baseline={410}><DeployKiosk x={1394} y={410} /></g>
-          <g data-baseline={452}><Planter x={1268} y={452} w={296} /></g>
-          {/* lounge */}
-          <g data-baseline={540}><WaterCooler x={1136} y={540} /></g>
-          <g data-baseline={540}>
-            <CoffeeCounter x={1352} y={540} onClick={() => {
+          <OfficeDesks status={status} dark={dark} nameOf={(id) => dir.name(id)} onDesk={openDeskMenu} onTerminal={select} />
+          <OfficeDecor
+            dark={dark}
+            onCoffee={() => {
               const who = director.coffeeBreak();
               toast(who ? `${dir.name(who)} is grabbing a coffee ☕` : "Everyone's busy — no coffee break right now.");
-            }} />
-          </g>
-          <g data-baseline={667}>
-            <Foosball x={1253} y={667} onClick={() => {
+            }}
+            onFoosball={() => {
               const who = director.foosball();
               toast(who.length ? `${dir.name(who[0])} vs ${dir.name(who[1])} — foosball time ⚽` : "Not enough people free for a game right now.");
-            }} />
-          </g>
-          <g data-baseline={640}><Plant x={1410} y={640} variant="round" s={0.85} /></g>
-          <g data-baseline={796}><SofaBack x={1252} y={798} /></g>
-          <g data-baseline={812}><SofaFront x={1252} y={812} /></g>
-          <g data-baseline={800}><FloorLamp x={1396} y={800} color="#6c7cf0" /></g>
-          <g data-baseline={848}><Plant x={1106} y={848} variant="leafy" s={0.8} /></g>
-          {/* meeting */}
-          {[0, 1, 2, 3].map((i) => (
-            <g key={`mc-${i}`} data-baseline={667}><Chair x={NODES[`meet_n${i}`].x} y={NODES[`meet_n${i}`].y} color="#9aa3b5" dark={dark} /></g>
-          ))}
-          <g data-baseline={MEETING.y}><MeetingTable x={MEETING.x} y={MEETING.y} w={MEETING.w} /></g>
-          <g data-baseline={600}><Plant x={372} y={600} variant="round" s={0.7} /></g>
+            }}
+          />
 
           {EMPLOYEE_IDS.map((id) => (
             <g

@@ -18,9 +18,11 @@ export function PageHeader({ title, description, actions, className }: {
 }) {
   return (
     <div className={cn("flex flex-wrap items-center justify-between gap-4", className)}>
-      <div className="grid min-w-0 gap-1">
-        <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      <div className="grid min-w-0 gap-1.5">
+        <h1 className="rc-title text-3xl leading-tight font-semibold md:text-[2.1rem]">
+          <span className="max-w-full truncate align-bottom">{title}</span>
+        </h1>
+        {description && <p className="max-w-prose text-sm text-muted-foreground text-pretty">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -44,10 +46,10 @@ export function StatCard({ icon, label, value, hint, tone = "default", suffix, c
     warning: "text-amber-600 dark:text-amber-400",
   };
   return (
-    <Card data-reveal className={cn("@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs dark:bg-card", className)}>
+    <Card data-reveal className={cn("@container/card shadow-xs transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md", className)}>
       <CardHeader>
         <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+        <CardTitle className="font-display text-3xl font-semibold tabular-nums @[250px]/card:text-4xl">
           <AnimatedNumber value={value} suffix={suffix} />
         </CardTitle>
         <CardAction>
