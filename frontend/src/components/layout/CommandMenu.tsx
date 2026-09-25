@@ -73,7 +73,7 @@ export function CommandMenu() {
             {(sites.data ?? []).map((s, i) => (
               <CommandItem key={s.id} onSelect={() => go(`/sites/${s.id}/overview`)}><Globe /> {s.name}{i < 9 && <CommandShortcut>⌘{i + 1}</CommandShortcut>}</CommandItem>
             ))}
-            <CommandItem onSelect={() => go("/")}><Globe /> All websites</CommandItem>
+            <CommandItem onSelect={() => go("/sites")}><Globe /> All websites</CommandItem>
           </CommandGroup>
           <CommandGroup heading="Preferences">
             <CommandItem onSelect={() => { setTheme(resolvedTheme === "dark" ? "light" : "dark"); setOpen(false); }}>

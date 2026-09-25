@@ -213,7 +213,7 @@ function Danger() {
             <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={site.name} />
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={confirm !== site.name} onClick={() => del.mutate(siteId, { onSuccess: () => { toast.success("Website deleted"); navigate("/"); } })}>Delete forever</AlertDialogAction>
+              <AlertDialogAction disabled={confirm !== site.name} onClick={() => del.mutate(siteId, { onSuccess: () => { toast.success("Website deleted"); navigate("/sites"); } })}>Delete forever</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

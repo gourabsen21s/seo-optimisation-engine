@@ -55,7 +55,7 @@ function SiteSwitcher({ siteId }: { siteId: number | null }) {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/")} className="gap-2 p-2"><Globe className="size-4" /> All websites</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/sites")} className="gap-2 p-2"><Globe className="size-4" /> All websites</DropdownMenuItem>
             <AddSiteDialog trigger={<DropdownMenuItem onSelect={(e) => e.preventDefault()} className="gap-2 p-2"><Plus className="size-4" /> Add website</DropdownMenuItem>} />
           </DropdownMenuContent>
         </DropdownMenu>

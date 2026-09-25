@@ -13,6 +13,7 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 import { SitesPage } from "@/pages/SitesPage";
 import { SiteLayout } from "@/pages/site/SiteLayout";
 
+const LandingPage = lazy(() => import("@/features/landing/LandingPage"));
 const OverviewPage = lazy(() => import("@/pages/site/OverviewPage"));
 const OfficePage = lazy(() => import("@/pages/site/OfficePage"));
 const ChatPage = lazy(() => import("@/pages/site/ChatPage"));
@@ -64,9 +65,10 @@ export default function App() {
         <TooltipProvider delayDuration={200}>
           <BrowserRouter>
             <Routes>
+              <Route index element={<Suspense fallback={<div className="min-h-svh bg-[#0a0e17]" />}><LandingPage /></Suspense>} />
               <Route path="/login" element={<LoginPage />} />
               <Route element={<RequireAuth><AppShell /></RequireAuth>}>
-                <Route index element={<SitesPage />} />
+                <Route path="sites" element={<SitesPage />} />
                 <Route path="settings" element={<Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>} />
                 <Route path="sites/:siteId" element={<SiteLayout />}>
                   <Route index element={<Navigate to="overview" replace />} />

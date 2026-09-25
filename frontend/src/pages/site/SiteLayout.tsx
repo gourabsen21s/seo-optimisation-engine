@@ -14,7 +14,7 @@ export function SiteLayout() {
   const { siteId: raw } = useParams();
   const siteId = Number(raw);
   const site = useSite(siteId);
-  if (!Number.isFinite(siteId)) return <Navigate to="/" replace />;
+  if (!Number.isFinite(siteId)) return <Navigate to="/sites" replace />;
   if (site.isLoading) {
     return (
       <div className="grid gap-4">

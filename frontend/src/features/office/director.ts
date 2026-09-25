@@ -474,8 +474,12 @@ export class OfficeDirector {
   private names: (id: EmployeeId) => string;
   private fx = new Set<gsap.core.Animation>();
 
-  constructor(names: (id: EmployeeId) => string) {
+  /** `atDesks`: everyone starts at their desk's approach node instead of somewhere on the floor. */
+  private atDesks: boolean;
+
+  constructor(names: (id: EmployeeId) => string, opts: { atDesks?: boolean } = {}) {
     this.names = names;
+    this.atDesks = !!opts.atDesks;
   }
 
   nameOf(id: EmployeeId) { return this.names(id); }
@@ -491,7 +495,7 @@ export class OfficeDirector {
   register(id: EmployeeId, parts: CharacterParts) {
     if (this.agents.has(id)) return;
     const d = DESKS[id];
-    const start = id === "compliance" ? "rack_mid" : d.kind === "manager" ? "mgr_in" : pick(["a_535_385", "a_705_385", "a_875_385", "a_535_578", "a_875_578", "lg_mid", "a_350_578", "lib_a", "a_1045_385"]);
+    const start = this.atDesks ? d.approach : id === "compliance" ? "rack_mid" : d.kind === "manager" ? "mgr_in" : pick(["a_535_385", "a_705_385", "a_875_385", "a_535_578", "a_875_578", "lg_mid", "a_350_578", "lib_a", "a_1045_385"]);
     this.agents.set(id, new Agent(id, parts, this, start));
   }
 
