@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Daily cap on LLM tokens (input + output) across all employees and chat. 0 = unlimited.
     llm_daily_token_budget: int = 0
 
-    # ---- research integrations (all optional; overridable from the UI → Workspace settings → Integrations)
+    # ---- research integrations (all optional; overridable from the UI → Platform settings → Integrations)
     # Live Google results for rank checks, SERP and competitor research: serper | serpapi | brave
     serp_provider: str = ""
     serp_api_key: str = ""
@@ -83,7 +83,12 @@ class Settings(BaseSettings):
     code_execution_enabled: bool = False
 
     # ---- notifications
-    public_url: str = ""  # where the UI is reachable, for links in notifications
+    public_url: str = ""  # where the UI is reachable, for links in notifications and account emails
+    # Proxies whose X-Forwarded-For is trusted (comma-separated IPs, or "*" only if nothing else can reach the app).
+    forwarded_allow_ips: str = "127.0.0.1"
+    # Development only: return verification / reset / invite links in API responses when no SMTP is configured.
+    # Never honoured in production.
+    dev_links: bool = False
     slack_webhook_url: str = ""
     notify_webhook_url: str = ""
     smtp_host: str = ""
@@ -93,6 +98,24 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     notify_email: str = ""
 
+    # ---- SaaS: accounts, credits and billing
+    signups_enabled: bool = True
+    # Comma-separated emails that become platform operators (see every account, manage platform settings).
+    admin_emails: str = ""
+    # Accounts must confirm their email address before the crew can spend credits.
+    require_email_verification: bool = True
+    session_days: int = 30
+    signup_credits: int = 100
+    # Prices in millicredits (1 credit = 1000 mc): per crawled page, per checked keyword; LLM is per token.
+    credit_mc_per_page: int = 100
+    credit_mc_per_rank_keyword: int = 1000
+    credit_tokens_per_credit: int = 2000
+    # Credit packs as JSON: [{"id": "starter", "name": "Starter", "credits": 500, "price_cents": 900}, ...]
+    credit_packs: str = ""
+    currency: str = "usd"
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+
     cors_origins: list[str] = Field(default_factory=list)
     # Built web UI. Defaults to ./frontend/dist (repo checkout or Docker image working directory).
     frontend_dist: str = ""
@@ -100,6 +123,14 @@ class Settings(BaseSettings):
     @property
     def api_key_list(self) -> list[str]:
         return [k.strip() for k in self.api_keys.split(",") if k.strip()]
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.environment == "production"
 
 
 @lru_cache

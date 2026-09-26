@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/webmasters"]
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 API = "https://searchconsole.googleapis.com"
 
 
@@ -39,6 +40,10 @@ class SearchConsole:
             info = json.loads(cfg.service_account_json)
         except json.JSONDecodeError as exc:
             raise GSCError("service_account_json is not valid JSON") from exc
+        if not isinstance(info, dict):
+            raise GSCError("service_account_json must be a JSON object")
+        # The key file is customer-supplied: pin the token endpoint so it cannot point the server elsewhere.
+        info = {**info, "token_uri": GOOGLE_TOKEN_URI}
         self._creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
 
     async def _token(self) -> str:

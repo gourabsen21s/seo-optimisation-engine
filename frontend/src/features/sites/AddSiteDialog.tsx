@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Globe, Plus, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,13 @@ import { AUTOPILOT_OPTIONS } from "./autopilot";
 export function AddSiteDialog({ trigger }: { trigger?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
+  // A site typed on the landing page before signing up opens here, prefilled, once.
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem("rc:pending-site");
+      if (pending) { sessionStorage.removeItem("rc:pending-site"); setUrl(pending); setOpen(true); }
+    } catch { /* storage off */ }
+  }, []);
   const [name, setName] = useState("");
   const [autopilot, setAutopilot] = useState<AutopilotMode>("off");
   const [start, setStart] = useState(true);

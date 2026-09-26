@@ -98,6 +98,7 @@ They work like a real team:
 ## The web UI
 
 The UI is built with React 19, [shadcn/ui](https://ui.shadcn.com) (Radix, Tailwind v4) and [GSAP](https://gsap.com).
+`/` is the public, scroll-driven landing page; customers sign up at `/signup` and work at `/sites`.
 Pick a site in the sidebar to get these sections:
 
 - **Workspace:**
@@ -109,6 +110,9 @@ Pick a site in the sidebar to get these sections:
 - **Audit:** Rankings (daily keyword positions), Findings, the AdSense checklist, Pages, Content quality.
 - **Improve:** Content, Fixes (diff view, Jev verification, rollback), Memory, Reports.
 - **Configure:** site settings, autopilot and connectors.
+- **Billing & credits:** balance, credit packs (Stripe Checkout), what everything costs, and a ledger of every credit.
+- **Account:** profile, password, the workspace's own notification channels, and deleting the workspace.
+- **Platform settings** (operators only): AI models, research integrations, the email server, budgets and customers.
 
 Other shortcuts: <kbd>⌘K</kbd> opens the command menu, <kbd>⌘1–9</kbd> jumps between sections, and light, dark and system themes are all supported.
 
@@ -122,8 +126,12 @@ docker compose build
 docker compose run --rm --no-deps app seo-engine gen-secrets
 # paste both printed values into .env, add your LLM key (e.g. ANTHROPIC_API_KEY) and optionally TYPESAFE_API_KEY
 docker compose up -d
-open http://localhost:8000        # sign in with the SEO_API_KEYS value
+docker compose exec app seo-engine create-admin you@yourcompany.com   # the first platform operator (asks for a password)
+open http://localhost:8000
 ```
+
+Customers create their own accounts at `/signup`. The `SEO_API_KEYS` value still works as an operator key for
+the API (`X-API-Key` header) and the CLI.
 
 This starts `app` (API + UI, runs migrations on boot), `worker` (jobs, tasks + scheduler), Postgres, Redis and
 Qdrant. The embedding model is baked into the image, so memory works offline.
@@ -143,6 +151,66 @@ One-off audit from the terminal (no database needed):
 ```bash
 .venv/bin/seo-engine audit https://example.com --max-pages 200 --html report.html
 ```
+
+## Running Rankcrew as a service
+
+Rankcrew is multi-tenant: every customer gets a **workspace** (account) with its own sites, crew, memory, credits
+and notification channels. Customers can only see and change their own workspace; requests for anything else get
+a 404.
+
+**Accounts.** Email and password sign-up with email verification, password reset, and sign-out everywhere when a
+password changes. Passwords are hashed with scrypt; sessions are random tokens in an HttpOnly, SameSite cookie
+(Secure in production), and only their hashes are stored. State-changing requests must carry an
+`X-Requested-With` header, which cross-site forms cannot send. Sign-in locks for 15 minutes after 10 failed
+attempts, and sign-up, sign-in and reset are rate-limited per IP and per email.
+
+**Credits.** Customers pay for work, not seats. New workspaces get `SEO_SIGNUP_CREDITS` (100) free. Defaults:
+
+| Work | Price |
+|---|---|
+| Audit | 0.1 credit per crawled page (a crawl never goes past what the balance covers) |
+| AI work (tasks, chat, reports, code edits) | 1 credit per 2,000 tokens |
+| Live search results | 1 credit per rank-checked keyword or AI web search |
+| Fixes, rollbacks, Search Console | free |
+
+Work starts only with at least 1 credit left. AI work is billed per model response as it happens and the balance
+is re-checked before every request, so runs sharing a balance stop within one request of running out. Paid work is refused with HTTP 402 when a workspace is out of credits, and the
+scheduler skips workspaces that are out of credits, unconfirmed or suspended. The owner is told once a day when the crew stops. Every change to a
+balance is a row in the credit ledger, shown to the customer in Billing.
+
+**Payments (Stripe).** Customers buy credit packs through Stripe Checkout. Set `SEO_STRIPE_SECRET_KEY` and
+`SEO_STRIPE_WEBHOOK_SECRET`, and point a Stripe webhook at `<SEO_PUBLIC_URL>/api/billing/webhook` for
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` and
+`checkout.session.expired` and `charge.refunded`. Webhooks are signature-checked, each payment credits the workspace
+exactly once, and a (partial) refund takes back the matching share of its credits. Disputes (chargebacks) are not
+automated: remove the credits or suspend the workspace from Platform settings → Customers. Pack sizes and prices
+come from `SEO_CREDIT_PACKS`.
+
+**Teams and API keys.** Owners invite teammates by email (Account → Team); an invitation link is valid for 7 days
+and works once. Members share the workspace's sites, crew and credits; owners also manage the team, API keys and
+notification channels. Owners can create API keys (Account → API keys) for scripts and CI: send them as
+`Authorization: Bearer rc_…`. A key acts for its workspace only, is shown once, and stops working when revoked.
+When an owner is removed or made a member, the API keys they created and the invitations they sent stop working
+too. The operator workspace has no invitations or customer keys: add operators with `create-admin`.
+
+**Operators.** Users listed in `SEO_ADMIN_EMAILS` (once their address is verified) or created with
+`seo-engine create-admin` manage the platform. `create-admin` creates a new user in the operator workspace, or
+promotes an existing *verified* user and sets the password you typed; it refuses an unconfirmed sign-up, since
+anyone can register any address. Operators manage
+AI models and keys, research integrations, the SMTP server used for account email, budgets, and customer
+workspaces (search, add or remove credits, suspend). `seo-engine grant-credits <email> <credits>` does the same from a shell.
+
+**Before launch.** Set `SEO_ENVIRONMENT=production`, `SEO_PUBLIC_URL`, an SMTP server (Platform settings → Notifications
+or the `SEO_SMTP_*` variables), the Stripe keys, and your company details for the legal pages
+(`VITE_LEGAL_NAME`, `VITE_SUPPORT_EMAIL`, `VITE_LEGAL_ADDRESS` at build time). The Terms and Privacy pages
+(`/terms`, `/privacy`) are a starting point: have them reviewed for your jurisdiction. Behind a reverse proxy, set
+`SEO_FORWARDED_ALLOW_IPS` to the proxy's address so rate limits see real client IPs.
+
+Customers can connect WordPress or GitHub; the local-folder connector reads and writes the server's disk, so it is
+only available for the operator's own sites. Customer webhooks and WordPress addresses must be public hosts.
+
+For local development without a mail server, `SEO_DEV_LINKS=true` returns verification, reset and invitation
+links in API responses (the UI shows them). It only works when `SEO_ENVIRONMENT` is `development` or `test`.
 
 ## Configuration
 
@@ -211,7 +279,7 @@ workflows, secrets and lock files are never edited.
 
 ### Research, notifications and budget
 
-All optional, and editable at runtime in **Workspace settings** (keys are encrypted at rest):
+All optional, and editable at runtime in **Platform settings** (keys are encrypted at rest):
 
 - **Integrations** — search results provider (`SEO_SERP_PROVIDER` + `SEO_SERP_API_KEY`), Open PageRank, PageSpeed,
   IndexNow.

@@ -65,8 +65,10 @@ def serve(host: str = "0.0.0.0", port: int = 8000, reload: bool = False, workers
     """Run the API + web UI."""
     import uvicorn
 
+    from .core.config import get_settings
+
     uvicorn.run("seo_engine.api.app:app", host=host, port=port, reload=reload, workers=workers,
-                proxy_headers=True, forwarded_allow_ips="*")
+                proxy_headers=True, forwarded_allow_ips=get_settings().forwarded_allow_ips)
 
 
 @app.command()
@@ -101,6 +103,66 @@ def tick():
     from .workers.scheduler import tick as _tick
 
     console.print(json.dumps(asyncio.run(_tick())))
+
+
+@app.command("create-admin")
+def create_admin(email: str, password: str = typer.Option(..., prompt=True, hide_input=True, confirmation_prompt=True),
+                 name: str = ""):
+    """Create a platform operator in the operator workspace, or promote an existing verified user."""
+    from sqlalchemy import update
+
+    from .db import User, session_scope
+    from .services import accounts
+    from .services.common import ServiceError, now
+
+    async def run():
+        addr = accounts.normalize_email(email)
+        accounts.check_password_policy(password, addr)
+        existing = await accounts.user_by_email(addr)
+        if existing is None:
+            account_id = await accounts.operator_account_id()
+            async with session_scope() as s:
+                user = User(account_id=account_id, email=addr, name=name.strip()[:200], role="owner",
+                            password_hash=accounts.hash_password(password), is_superuser=True,
+                            email_verified_at=now())
+                s.add(user)
+                await s.flush()
+                return user.id, "created in the operator workspace"
+        if existing.email_verified_at is None:
+            # Anyone can sign up with any address; an unconfirmed account might not be yours.
+            raise ServiceError(f"{addr} signed up but never confirmed the address. Confirm it first (the emailed "
+                               "link, or Forgot password), then run create-admin again.")
+        async with session_scope() as s:
+            await s.execute(update(User).where(User.id == existing.id).values(
+                is_superuser=True, password_hash=accounts.hash_password(password), failed_logins=0,
+                locked_until=None))
+        await accounts.end_all_sessions(existing.id)
+        return existing.id, "promoted; password set and other sessions signed out"
+
+    try:
+        user_id, what = asyncio.run(run())
+    except ServiceError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from None
+    console.print(f"Operator ready: {email} (user {user_id}, {what})")
+
+
+@app.command("grant-credits")
+def grant_credits(email: str, credits: float, note: str = "Granted by operator"):
+    """Add credits to the workspace of the user with this email (negative to remove)."""
+    from .services import accounts
+    from .services import credits as credit_service
+
+    async def run():
+        user = await accounts.user_by_email(email)
+        if user is None:
+            raise typer.BadParameter(f"no user with email {email}")
+        mc = round(credits * credit_service.MC)
+        if mc > 0:
+            return await credit_service.add(user.account_id, mc, "grant", note=note)
+        return await credit_service.charge(user.account_id, -mc, "adjustment", note=note)
+
+    console.print(f"New balance: {credit_service.fmt(asyncio.run(run()) or 0)} credits")
 
 
 if __name__ == "__main__":

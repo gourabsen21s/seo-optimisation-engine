@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, ChevronRight, Globe, Loader2, MessageCircleQuestion, Plus, Rocket } from "lucide-react";
+import { Building2, Check, ChevronRight, Globe, Loader2, MessageCircleQuestion, Plus, Rocket, X } from "lucide-react";
 import { Pill } from "@/components/common/badges";
 import { PageHeader, StatCard } from "@/components/common/blocks";
 import { Reveal } from "@/components/common/motion";
@@ -14,9 +15,10 @@ import { AddSiteDialog } from "@/features/sites/AddSiteDialog";
 import { autopilotMeta } from "@/features/sites/autopilot";
 import { EmployeeAvatar } from "@/features/team/EmployeeAvatar";
 import { EMPLOYEE_IDS } from "@/features/team/employees";
-import { useSites } from "@/lib/hooks";
+import { useMe, useSites } from "@/lib/hooks";
 import type { Site } from "@/lib/types";
-import { hostname, timeAgo } from "@/lib/utils";
+import { cn, hostname, timeAgo } from "@/lib/utils";
+import { fmtCredits } from "@/components/layout/AccountBits";
 
 function greeting() {
   const h = new Date().getHours();
@@ -55,7 +57,50 @@ function SiteCard({ site }: { site: Site }) {
   );
 }
 
+const DISMISS_KEY = "rc:onboarding-done";
+
+/** First-run checklist: the few steps between signing up and the crew doing useful work. */
+function GettingStarted({ sites }: { sites: Site[] }) {
+  const me = useMe().data;
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(DISMISS_KEY) === "1"; } catch { return false; } });
+  const first = sites[0];
+  const steps = [
+    ...(me?.require_verification ? [{ label: "Confirm your email", done: !!me.user?.email_verified, hint: "Check your inbox for the link." }] : []),
+    { label: "Add your website", done: sites.length > 0, hint: "Paste its address; the crew starts with a free look around." },
+    { label: "Run your first audit", done: sites.some((s) => s.last_audit_at), hint: "Scores for SEO health and AdSense readiness.", to: first && `/sites/${first.id}/overview` },
+    { label: "Review the proposed fixes", done: sites.some((s) => s.counts.applied_fixes > 0), hint: "Approve what you like; nothing changes on your site until you do.", to: first && `/sites/${first.id}/fixes` },
+    { label: "Connect Search Console", done: sites.some((s) => s.gsc_configured), hint: "Optional. Real clicks, impressions and positions.", to: first && `/sites/${first.id}/settings?tab=gsc` },
+  ];
+  const left = steps.filter((s) => !s.done).length;
+  if (hidden || left === 0) return null;
+  const dismiss = () => { setHidden(true); try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* private mode */ } };
+  return (
+    <Card className="shadow-xs">
+      <CardHeader>
+        <CardTitle>Get your crew working</CardTitle>
+        <CardDescription>{steps.length - left} of {steps.length} done{me?.account.metered ? ` · ${fmtCredits(Math.max(0, me.account.credits))} credits available` : ""}</CardDescription>
+        <CardAction><Button variant="ghost" size="icon-sm" aria-label="Hide checklist" onClick={dismiss}><X /></Button></CardAction>
+      </CardHeader>
+      <CardContent>
+        <ol className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
+          {steps.map((s, i) => {
+            const body = (
+              <>
+                <span className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium tabular-nums", s.done ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground")}>{s.done ? <Check className="size-3" /> : i + 1}</span>
+                <span className="min-w-0"><span className={cn("block text-sm font-medium", s.done && "text-muted-foreground line-through")}>{s.label}</span><span className="block text-xs text-muted-foreground">{s.hint}</span></span>
+              </>
+            );
+            const cls = "flex gap-3 rounded-lg p-2.5 text-left";
+            return <li key={s.label}>{s.to && !s.done ? <Link to={s.to} className={cn(cls, "transition-colors hover:bg-accent")}>{body}</Link> : <div className={cls}>{body}</div>}</li>;
+          })}
+        </ol>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SitesPage() {
+  const me = useMe().data;
   const sites = useSites();
   const list = sites.data ?? [];
 
@@ -71,7 +116,7 @@ export function SitesPage() {
             <div className="flex -space-x-2">{EMPLOYEE_IDS.slice(0, 5).map((id) => <EmployeeAvatar key={id} actor={id} size="md" />)}</div>
           </EmptyMedia>
           <EmptyTitle>Add your first website</EmptyTitle>
-          <EmptyDescription>{BRAND.description}</EmptyDescription>
+          <EmptyDescription>{BRAND.description}{me?.account.metered && me.account.credits > 0 ? ` You have ${fmtCredits(me.account.credits)} credits to start with.` : ""}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
           <AddSiteDialog trigger={<Button><Plus /> Add website</Button>} />
@@ -94,6 +139,7 @@ export function SitesPage() {
         description={`Your crew is looking after ${list.length} ${list.length === 1 ? "website" : "websites"}.`}
         actions={<AddSiteDialog trigger={<Button><Plus /> Add website</Button>} />}
       />
+      <GettingStarted sites={list} />
       <Reveal className="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
         <StatCard icon={<Globe />} label="Websites" value={list.length} />
         <StatCard icon={<Rocket />} label="Average score" value={avg("overall")} hint="SEO + AdSense readiness" />

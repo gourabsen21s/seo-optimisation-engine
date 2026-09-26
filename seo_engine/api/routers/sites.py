@@ -1,27 +1,38 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 
 from ...connectors import CONNECTOR_FIELDS
 from ...db import MetricSnapshot, session_scope
+from ...services import credits
 from ...services import sites as site_service
+from ...services.accounts import Principal
 from ...workers.queue import enqueue
+from ..deps import current_principal
 from ..schemas import ConnectorIn, GSCIn, SiteCreate, SiteUpdate
 
 router = APIRouter(tags=["sites"])
 
 
 @router.get("/sites")
-async def list_sites():
-    return [await site_service.serialize(s) for s in await site_service.list_sites()]
+async def list_sites(p: Principal = Depends(current_principal)):
+    # Operator API keys see the whole platform; everyone else sees their own workspace.
+    scope = None if p.via == "api_key" else p.account_id
+    return [await site_service.serialize(s) for s in await site_service.list_sites(scope)]
 
 
 @router.post("/sites", status_code=201)
-async def create_site(body: SiteCreate):
-    site = await site_service.create_site(body.url, body.name, body.autopilot)
-    job_id = await enqueue("audit", site.id) if body.start_audit else None
-    return {"site": await site_service.serialize(site), "job_id": job_id}
+async def create_site(body: SiteCreate, p: Principal = Depends(current_principal)):
+    site = await site_service.create_site(body.url, body.name, body.autopilot, account_id=p.account_id)
+    job_id, blocked = None, None
+    if body.start_audit:
+        try:
+            await credits.ensure(p.account_id, user_verified=p.email_verified if p.via == "session" else None)
+            job_id = await enqueue("audit", site.id)
+        except credits.ServiceError as exc:  # the site is saved; the first audit waits for credits/verification
+            blocked = str(exc)
+    return {"site": await site_service.serialize(site), "job_id": job_id, "audit_blocked": blocked}
 
 
 @router.get("/sites/{site_id}")
@@ -42,13 +53,16 @@ async def delete_site(site_id: int):
 
 
 @router.get("/connectors/fields")
-async def connector_fields():
-    return CONNECTOR_FIELDS
+async def connector_fields(p: Principal = Depends(current_principal)):
+    if p.is_superuser:
+        return CONNECTOR_FIELDS
+    return {k: v for k, v in CONNECTOR_FIELDS.items() if k != "local"}  # the server's disk is operator-only
 
 
 @router.put("/sites/{site_id}/connector")
-async def set_connector(site_id: int, body: ConnectorIn):
-    return await site_service.serialize(await site_service.set_connector(site_id, body.type, body.config))
+async def set_connector(site_id: int, body: ConnectorIn, p: Principal = Depends(current_principal)):
+    return await site_service.serialize(await site_service.set_connector(site_id, body.type, body.config,
+                                                                         operator=p.is_superuser))
 
 
 @router.post("/sites/{site_id}/connector/test")

@@ -20,8 +20,9 @@ class UnsafeURLError(ValueError):
 
 def _is_public(ip: str) -> bool:
     addr = ipaddress.ip_address(ip)
-    return not (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_reserved
-                or addr.is_unspecified)
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return addr.is_global and not addr.is_multicast
 
 
 async def assert_public_url(url: str, allow_private: bool = False) -> None:

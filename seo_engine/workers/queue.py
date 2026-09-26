@@ -41,6 +41,13 @@ async def enqueue(job_type: str, site_id: int | None, params: dict[str, Any] | N
         existing = await active_job(site_id)
         if existing is not None and existing.type in ("audit", "cycle") and job_type in ("audit", "cycle"):
             return existing.id
+    if site_id is not None and job_type in ("rank_check", "weekly_report"):
+        # Always: these are paid, and each queued copy would plan against the same balance.
+        async with session_scope() as s:
+            same = await s.scalar(select(Job.id).where(Job.site_id == site_id, Job.type == job_type,
+                                                       Job.status.in_(("queued", "running"))).limit(1))
+        if same is not None:
+            return same
     async with session_scope() as s:
         job = Job(type=job_type, site_id=site_id, params=params or {}, status="queued", events=[])
         s.add(job)

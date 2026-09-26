@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ...db import Fix, session_scope
 from ...fixes.models import FixStatus
 from ...services import fixes as fix_service
 from ...services import sites as site_service
+from ...services.accounts import Principal
 from ...services.common import NotFound
 from ...workers.queue import enqueue
+from ..deps import current_principal, owned_site_ids
 from ..schemas import Ids
 
 router = APIRouter(tags=["fixes"])
@@ -19,13 +21,13 @@ async def list_fixes(site_id: int, status: str | None = None):
 
 
 @router.post("/fixes/approve")
-async def approve(body: Ids):
-    return {"updated": await fix_service.set_status(body.ids, FixStatus.APPROVED)}
+async def approve(body: Ids, p: Principal = Depends(current_principal)):
+    return {"updated": await fix_service.set_status(body.ids, FixStatus.APPROVED, await owned_site_ids(p))}
 
 
 @router.post("/fixes/reject")
-async def reject(body: Ids):
-    return {"updated": await fix_service.set_status(body.ids, FixStatus.REJECTED)}
+async def reject(body: Ids, p: Principal = Depends(current_principal)):
+    return {"updated": await fix_service.set_status(body.ids, FixStatus.REJECTED, await owned_site_ids(p))}
 
 
 @router.post("/sites/{site_id}/fixes/preview")
@@ -37,7 +39,7 @@ async def preview(site_id: int, body: Ids):
 @router.post("/sites/{site_id}/fixes/apply", status_code=202)
 async def apply(site_id: int, body: Ids):
     site_service.connector_for(await site_service.get_site(site_id))  # fail fast if no connector
-    await fix_service.set_status(body.ids, FixStatus.APPROVED)
+    await fix_service.set_status(body.ids, FixStatus.APPROVED, {site_id})
     return {"job_id": await enqueue("apply", site_id, {"ids": body.ids}, dedupe=False)}
 
 

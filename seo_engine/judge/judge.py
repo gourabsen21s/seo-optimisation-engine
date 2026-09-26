@@ -82,7 +82,7 @@ def _confidence(result) -> dict[str, float]:
 
 
 async def judge_pages(pages: Sequence[PageData], cfg: JudgeConfig, concurrency: int = 16,
-                      model: Model | None = None) -> list[dict[str, Any]]:
+                      model: Model | None = None, capabilities: list[Any] | None = None) -> list[dict[str, Any]]:
     agent = _make(model or build_model(cfg), PageJudgement,
                   "You assess web pages submitted for Google AdSense review. Judge only the text given.")
     sem = asyncio.Semaphore(concurrency)
@@ -92,7 +92,7 @@ async def judge_pages(pages: Sequence[PageData], cfg: JudgeConfig, concurrency: 
         text = f"URL: {page.final_url}\nTitle: {page.title}\n\n{page.text_excerpt[:24000]}"
         async with sem:
             try:
-                result = await agent.run(text)
+                result = await agent.run(text, capabilities=capabilities)
             except Exception as exc:
                 log.warning("judge failed for %s: %s", page.final_url, exc)
                 return
@@ -147,7 +147,8 @@ COPY_KINDS = {FixKind.SET_TITLE, FixKind.SET_META_DESCRIPTION, FixKind.SET_IMAGE
 
 
 async def verify_copy_fixes(fixes: list[FixAction], pages: dict[str, PageData], cfg: JudgeConfig,
-                            concurrency: int = 16, model: Model | None = None) -> None:
+                            concurrency: int = 16, model: Model | None = None,
+                            capabilities: list[Any] | None = None) -> None:
     """Guardrail: judge each LLM-written copy fix against its page. Failures are downgraded to REVIEW so
     autopilot never applies them. Verdicts are recorded in fix.payload['verification']."""
     agent = _make(model or build_model(cfg), CopyVerdict,
@@ -163,7 +164,7 @@ async def verify_copy_fixes(fixes: list[FixAction], pages: dict[str, PageData], 
                 f"PROPOSED {fix.kind.value.upper()}: {proposed}")
         async with sem:
             try:
-                result = await agent.run(text)
+                result = await agent.run(text, capabilities=capabilities)
             except Exception as exc:
                 log.warning("copy verification failed for %s: %s", fix.id, exc)
                 fix.risk = Risk.REVIEW

@@ -10,6 +10,7 @@ from ..core.models import CrawlResult
 from ..db import Site
 from ..fixes.models import FixAction
 from ..judge import verify_copy_fixes
+from ..services import budget
 from ..services import fixes as fix_service
 from ..services.common import JobReporter
 from ..services.settings import get_judge_config
@@ -28,7 +29,8 @@ async def process_proposals(site: Site, proposals: list[FixAction], crawl: Crawl
     if judge_cfg:
         pages = {p.final_url: p for p in crawl.html_pages()}
         pages.update({norm_url(k): v for k, v in list(pages.items())})
-        await verify_copy_fixes(proposals, pages, judge_cfg)
+        await verify_copy_fixes(proposals, pages, judge_cfg,
+                                capabilities=[budget.meter(site.id, COMPLIANCE, judge_cfg.model)])
         held_back = sum(1 for p in proposals if p.payload.get("verification", {}).get("passed") is False)
         if held_back:
             await log_activity(site.id, COMPLIANCE, "reviewed",

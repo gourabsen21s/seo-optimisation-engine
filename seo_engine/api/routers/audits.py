@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse, Response
 
 from ...core.models import AuditReport
@@ -12,11 +12,12 @@ from ...reports import render_html
 from ...services import audits as audit_service
 from ...services import sites as site_service
 from ...workers.queue import enqueue
+from ..deps import require_credits
 
 router = APIRouter(tags=["audits"])
 
 
-@router.post("/sites/{site_id}/audits", status_code=202)
+@router.post("/sites/{site_id}/audits", status_code=202, dependencies=[Depends(require_credits)])
 async def start_audit(site_id: int):
     await site_service.get_site(site_id)
     return {"job_id": await enqueue("audit", site_id)}

@@ -30,8 +30,24 @@ async def tick() -> list[int]:
                                                        < now() - timedelta(seconds=settings.job_timeout_seconds))))
         for job in stale:  # worker died mid-job
             job.status, job.error, job.finished_at = "failed", "timed out", now()
+    paying: dict[int | None, bool] = {}
+
+    async def can_spend(account_id: int | None) -> bool:
+        """Accounts out of credits, unverified or suspended get no scheduled paid work."""
+        if account_id not in paying:
+            from ..services import credits
+
+            try:
+                await credits.ensure(account_id)
+                paying[account_id] = True
+            except credits.ServiceError:
+                paying[account_id] = False
+        return paying[account_id]
+
     for site in sites:
         if await active_job(site.id):
+            continue
+        if not await can_spend(site.account_id):
             continue
         if site.autopilot != "off" and _due(site.last_cycle_at, site.cycle_every_hours):
             enqueued.append(await enqueue("cycle", site.id, {"fresh_audit": True}))
@@ -47,13 +63,19 @@ async def tick() -> list[int]:
     for site in sites:  # daily rank tracking for sites with tracked keywords
         from ..services.rankings import has_keywords
 
-        if not await has_keywords(site.id):
+        if not await can_spend(site.account_id) or not await has_keywords(site.id):
             continue
         async with session_scope() as s:
             last_check = await s.scalar(select(Job.created_at).where(Job.site_id == site.id, Job.type == "rank_check")
                                         .order_by(Job.id.desc()).limit(1))
         if _due(last_check, 24):
             enqueued.append(await enqueue("rank_check", site.id, dedupe=False))
+    try:  # expired sessions, one-time tokens and invitations
+        from ..services.team import purge_expired
+
+        await purge_expired()
+    except Exception:
+        log.exception("session purge failed")
     try:  # workspaces left behind by crashed code tasks
         from ..code.workspace import purge_stale
 
@@ -61,7 +83,7 @@ async def tick() -> list[int]:
     except Exception:
         log.exception("workspace purge failed")
     for site in sites:  # team rituals for sites the team is actively working on
-        if site.autopilot == "off":
+        if site.autopilot == "off" or not await can_spend(site.account_id):
             continue
         async with session_scope() as s:
             last = dict((await s.execute(select(Report.kind, Report.created_at).where(Report.site_id == site.id)

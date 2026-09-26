@@ -7,8 +7,10 @@ from typing import Any
 from sqlalchemy import func, select
 
 from ..connectors import CONNECTOR_FIELDS, Connector, ConnectorError, build_connector
+from ..core.config import get_settings
+from ..core.security import UnsafeURLError, assert_public_url
 from ..crawler import normalize_start_url
-from ..db import Audit, Fix, Job, Site, Task, session_scope
+from ..db import Account, Audit, Fix, Job, Site, Task, session_scope
 from ..generators.profile import SiteProfile
 from ..integrations.gsc import GSCConfig, GSCError, SearchConsole
 from .common import NotFound, ServiceError, secret_box
@@ -68,19 +70,24 @@ async def serialize(site: Site) -> dict[str, Any]:
     }
 
 
-async def list_sites() -> list[Site]:
+async def list_sites(account_id: int | None = None) -> list[Site]:
+    """Sites of one account, or every site when `account_id` is None (operator API keys)."""
+    q = select(Site).order_by(Site.name)
+    if account_id is not None:
+        q = q.where(Site.account_id == account_id)
     async with session_scope() as s:
-        return list(await s.scalars(select(Site).order_by(Site.name)))
+        return list(await s.scalars(q))
 
 
-async def create_site(url: str, name: str | None = None, autopilot: str = "off") -> Site:
+async def create_site(url: str, name: str | None = None, autopilot: str = "off", account_id: int | None = None) -> Site:
     url = normalize_start_url(url)
     if autopilot not in AUTOPILOT_MODES:
         raise ServiceError(f"autopilot must be one of {sorted(AUTOPILOT_MODES)}")
     async with session_scope() as s:
-        if await s.scalar(select(Site).where(Site.url == url)):
-            raise ServiceError(f"{url} is already registered")
-        site = Site(url=url, name=name or url.split("//", 1)[-1].strip("/"), autopilot=autopilot, profile={})
+        if await s.scalar(select(Site).where(Site.url == url, Site.account_id == account_id)):
+            raise ServiceError(f"{url} is already in your workspace")
+        site = Site(url=url, name=name or url.split("//", 1)[-1].strip("/"), autopilot=autopilot, profile={},
+                    account_id=account_id)
         s.add(site)
         await s.flush()
         return site
@@ -118,18 +125,28 @@ async def delete_site(site_id: int) -> None:
 
 # ----------------------------------------------------------------------------- connector
 
-async def set_connector(site_id: int, kind: str, config: dict[str, Any]) -> Site:
+async def set_connector(site_id: int, kind: str, config: dict[str, Any], *, operator: bool = False) -> Site:
+    """`operator`: the caller is a platform operator. Only they may point the operator's own sites at a local
+    folder, since that connector reads and writes this server's disk."""
     if kind not in CONNECTOR_FIELDS:
         raise ServiceError(f"unknown connector type {kind!r}")
     async with session_scope() as s:
         site = await s.get(Site, site_id)
         if site is None:
             raise NotFound(f"site {site_id} not found")
+        acc = await s.get(Account, site.account_id) if site.account_id else None
+        if kind == "local" and not (operator and acc is not None and acc.kind == "operator"):
+            raise ServiceError("The local folder connector is not available. Connect WordPress or GitHub instead.")
         existing = secret_box().decrypt(site.connector_secret) if site.connector_type == kind else {}
         merged = {**existing, **{k: v for k, v in config.items() if v not in (None, "")}}
         missing = [f["name"] for f in CONNECTOR_FIELDS[kind] if f.get("required") and not merged.get(f["name"])]
         if missing:
             raise ServiceError(f"missing connector fields: {', '.join(missing)}")
+        if kind == "wordpress":
+            try:
+                await assert_public_url(str(merged["base_url"]), get_settings().allow_private_networks)
+            except UnsafeURLError as exc:
+                raise ServiceError(f"That WordPress address cannot be used: {exc}") from exc
         site.connector_type = kind
         site.connector_secret = secret_box().encrypt(merged)
         return site
@@ -144,6 +161,12 @@ def connector_for(site: Site) -> Connector:
 async def test_connector(site_id: int) -> dict[str, Any]:
     site = await get_site(site_id)
     try:
+        if site.connector_type == "wordpress" and site.connector_secret:  # re-check: DNS can change after saving
+            base = secret_box().decrypt(site.connector_secret).get("base_url", "")
+            try:
+                await assert_public_url(base, get_settings().allow_private_networks)
+            except UnsafeURLError as exc:
+                raise ServiceError(f"That WordPress address cannot be used: {exc}") from exc
         connector = connector_for(site)
         details = await connector.test()
         if hasattr(connector, "close"):

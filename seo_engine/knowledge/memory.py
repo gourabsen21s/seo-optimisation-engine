@@ -109,7 +109,10 @@ class TeamMemory:
         return sorted((_clean(m) for m in res.get("results", [])), key=lambda m: m.get("created_at") or "",
                       reverse=True)
 
-    async def forget(self, memory_id: str) -> None:
+    async def forget(self, memory_id: str, site_id: int | None = None) -> None:
+        # With a site, only delete a memory that belongs to it (never another tenant's).
+        if site_id is not None and memory_id not in {x["id"] for x in await self.list(site_id, limit=5000)}:
+            return
         await self._mem.delete(memory_id)
 
     async def forget_site(self, site_id: int) -> None:

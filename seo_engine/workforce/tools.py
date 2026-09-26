@@ -79,6 +79,12 @@ async def comment(ctx: RunContext[EmployeeDeps], body: str, task_id: int | None 
     target = task_id or ctx.deps.task_id
     if not target:
         return "No task to comment on."
+    try:
+        task, _ = await board.get_task(target)
+    except Exception:
+        return f"Task {target} not found."
+    if task.site_id != ctx.deps.site_id:
+        return f"Task {target} not found."
     await board.add_comment(target, ctx.deps.employee_id, body)
     return "Comment posted."
 

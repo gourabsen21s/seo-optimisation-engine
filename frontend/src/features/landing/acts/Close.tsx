@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { BRAND } from "@/config/brand";
+import { usePacks } from "@/lib/hooks";
+import type { Pack } from "@/lib/types";
 import { clamp01, finePointer, lerp, reducedMotion, smooth } from "../clock";
 import { useProgress } from "../hooks";
 
-const REPO = "https://github.com/gourabsen21s/seo-optimisation-engine";
 
 /** 17:00. The 14-day check, drawn by scroll: kept or rolled back. */
 const useCompact = () => {
@@ -66,9 +68,10 @@ export function Results() {
   );
 }
 
-const MODELS = ["Anthropic", "OpenAI", "Google Gemini", "Groq", "Mistral", "DeepSeek", "xAI", "OpenRouter", "Ollama", "vLLM", "LM Studio", "LiteLLM"];
+// What the crew connects to (from the product's connectors and integrations).
+const MODELS = ["WordPress", "GitHub", "Google Search Console", "PageSpeed Insights", "IndexNow", "Next.js", "Astro", "Hugo", "Jekyll", "Slack", "Rank Math", "Yoast"];
 
-/** A band of the models the crew can run on; drifts faster while the page is being scrolled. */
+/** A band of what the crew works with; drifts faster while the page is being scrolled. */
 function Models() {
   const track = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -107,31 +110,20 @@ function Models() {
   );
 }
 
-function Copy({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="lp-copy"
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1600); });
-      }}
-    >
-      {done ? "Copied" : "Copy"}
-    </button>
-  );
-}
-
-const DOCKER = `cp .env.example .env
-docker compose build
-docker compose run --rm --no-deps app seo-engine gen-secrets
-docker compose up -d`;
-
 function normalise(v: string) {
   const s = v.trim();
-  if (!s) return "https://yoursite.com";
+  if (!s) return "";
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
+
+// Shown until the live packs load (same as the server defaults).
+const FALLBACK: Pack[] = [
+  { id: "starter", name: "Starter", credits: 500, price_cents: 900, note: "A few audits and a week of AI work" },
+  { id: "growth", name: "Growth", credits: 2000, price_cents: 2900, note: "One site, fully managed for a month" },
+  { id: "scale", name: "Scale", credits: 6000, price_cents: 7900, note: "Several sites or a large catalogue" },
+];
+const price = (cents: number, currency: string) =>
+  new Intl.NumberFormat("en", { style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 
 /** The wordmark on the horizon: it stretches out as it arrives, and swells under the pointer. */
 function Wordmark({ progress }: { progress: React.RefObject<number> }) {
@@ -188,13 +180,18 @@ function Wordmark({ progress }: { progress: React.RefObject<number> }) {
   );
 }
 
-/** 18:00. Sign-off: the one action, with a real input that writes the real command. */
+/** 18:00. Sign-off: the one action. Type your site, and sign-up carries it straight into your first audit. */
 export function SignOff() {
   const ref = useRef<HTMLElement>(null);
   const sun = useRef<HTMLDivElement>(null);
   const prog = useRef(0);
   const [url, setUrl] = useState("");
-  const cmd = `seo-engine audit ${normalise(url)} --max-pages 200 --html report.html`;
+  const navigate = useNavigate();
+  const packs = usePacks().data;
+  const list = packs?.packs?.length ? packs.packs : FALLBACK;
+  const currency = packs?.currency ?? "usd";
+  const free = packs?.signup_credits ?? 100;
+  const perPage = packs?.prices.find((r) => r.item === "Audit")?.credits ?? 0.1;
 
   useProgress(ref, (p) => {
     prog.current = p;
@@ -203,6 +200,12 @@ export function SignOff() {
     if (sun.current) sun.current.style.transform = `translate3d(-50%, ${lerp(-70, 12, s).toFixed(1)}%, 0)`;
   }, "tail");
 
+  const start = (e: React.FormEvent) => {
+    e.preventDefault();
+    const site = normalise(url);
+    navigate(site ? `/signup?site=${encodeURIComponent(site)}` : "/signup");
+  };
+
   return (
     <section ref={ref} id="signoff" className="lp-act lp-signoff g-dusk" aria-labelledby="signoff-title">
       <Models />
@@ -210,41 +213,33 @@ export function SignOff() {
         <div className="lp-signoff__copy">
           <p className="lp-hour">18:00</p>
           <h2 id="signoff-title" className="lp-display lp-display--lg">Your crew can start tonight.</h2>
-          <p className="lp-body">Self-hosted, so your data stays on your server. Bring any model, or none: the audit and the rule-based fixes run without one. Search Console, WordPress and GitHub connect when you are ready.</p>
-          <div className="lp-actions">
-            <a className="lp-btn lp-btn--primary" href={`${REPO}#quick-start`} target="_blank" rel="noreferrer">Deploy the crew</a>
-            <a className="lp-btn lp-btn--ghost" href="/login">Open console</a>
-          </div>
+          <p className="lp-body">Sign up, add your site, and Theo runs the first audit straight away. You pay for work, not seats: credits cover crawls, AI tasks and rank checks, and fixes cost nothing.</p>
+          <form className="lp-start" onSubmit={start}>
+            <label className="lp-deploy__label" htmlFor="lp-site">Your site</label>
+            <div className="lp-start__row">
+              <input id="lp-site" className="lp-input" type="url" inputMode="url" autoComplete="url" spellCheck={false}
+                placeholder="yoursite.com" value={url} onChange={(e) => setUrl(e.target.value)} />
+              <button className="lp-btn lp-btn--primary" type="submit">Start free</button>
+            </div>
+            <p className="lp-deploy__hint">{free} free credits on sign-up, enough for a full audit. No card needed.</p>
+          </form>
         </div>
 
-        <div id="deploy" className="lp-deploy">
-          <div className="lp-deploy__step">
-            <label className="lp-deploy__label" htmlFor="lp-site">Try it on your site first</label>
-            <input
-              id="lp-site"
-              className="lp-input"
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              spellCheck={false}
-              placeholder="yoursite.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            <div className="lp-code">
-              <code>{cmd}</code>
-              <Copy text={cmd} />
-            </div>
-            <p className="lp-deploy__hint">One command, no database: a full audit and an HTML report.</p>
-          </div>
-          <div className="lp-deploy__step">
-            <p className="lp-deploy__label">Then run the whole crew</p>
-            <div className="lp-code lp-code--block">
-              <pre><code>{DOCKER}</code></pre>
-              <Copy text={DOCKER} />
-            </div>
-            <p className="lp-deploy__hint">Paste the two printed secrets and your model key into <code>.env</code>, then open <code>localhost:8000</code>.</p>
-          </div>
+        <div id="pricing" className="lp-deploy">
+          <p className="lp-deploy__label">Credits, when you need more</p>
+          <ul className="lp-packs">
+            {list.map((p) => (
+              <li key={p.id} className="lp-pack">
+                <div>
+                  <p className="lp-pack__name">{p.name}</p>
+                  <p className="lp-pack__note">{p.note}</p>
+                </div>
+                <p className="lp-pack__credits lp-nums">{p.credits.toLocaleString("en")}<span> credits</span></p>
+                <p className="lp-pack__price lp-nums">{price(p.price_cents, currency)}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="lp-deploy__hint">About {price(Math.max(1, Math.round((list[0].price_cents / list[0].credits) * perPage * 100)), currency)} buys an audit of 100 pages. Credits never expire. <Link to="/signup">Create an account</Link> to see every price in Billing.</p>
         </div>
       </div>
 
@@ -253,8 +248,12 @@ export function SignOff() {
         <Wordmark progress={prog} />
       </div>
       <footer className="lp-wrap lp-foot">
-        <span>{BRAND.name}. Self-hosted SEO and AdSense readiness, run by a crew of AI employees.</span>
-        <a href={REPO} target="_blank" rel="noreferrer">Source on GitHub</a>
+        <span>{BRAND.name}. SEO and AdSense readiness, run by a crew of AI employees.</span>
+        <nav aria-label="Footer" className="lp-foot__nav">
+          <Link to="/login">Sign in</Link>
+          <Link to="/terms">Terms</Link>
+          <Link to="/privacy">Privacy</Link>
+        </nav>
       </footer>
     </section>
   );

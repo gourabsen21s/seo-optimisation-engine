@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BookOpen, Check, ChevronsUpDown, EllipsisVertical, Globe, LogOut, Plus, Settings } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Check, ChevronsUpDown, CreditCard, EllipsisVertical, Globe, LogOut, Plus, Settings, UserRound } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogoMark } from "@/components/brand/Logo";
 import { LiveDot } from "@/components/common/badges";
@@ -9,8 +10,8 @@ import {
 } from "@/components/ui/sidebar";
 import { BRAND } from "@/config/brand";
 import { AddSiteDialog } from "@/features/sites/AddSiteDialog";
-import { auth } from "@/lib/api";
-import { useLatestAudit, useSite, useSites } from "@/lib/hooks";
+import { api } from "@/lib/api";
+import { qk, useLatestAudit, useMe, useSite, useSites } from "@/lib/hooks";
 import type { Site } from "@/lib/types";
 import { useCurrentSite } from "@/lib/useCurrentSite";
 import { cn, hostname } from "@/lib/utils";
@@ -129,42 +130,58 @@ function HomeNav() {
   );
 }
 
+function initialsOf(name: string, email: string) {
+  const src = (name || email.split("@")[0]).trim();
+  const parts = src.split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? parts[0]?.[1] ?? "")).toUpperCase();
+}
+
 function UserMenu() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { isMobile } = useSidebar();
+  const me = useMe().data;
+  const email = me?.user?.email ?? "Operator key";
+  const name = me?.user?.name || (me?.user ? email.split("@")[0] : "Operator");
+  const init = me?.user ? initialsOf(me.user.name, me.user.email) : "OP";
+  const signOut = async () => {
+    try { await api.logout(); } catch { /* already signed out */ }
+    qc.clear();
+    qc.setQueryData(qk.me, null);
+    navigate("/login", { replace: true });
+  };
+  const who = (
+    <>
+      <Avatar className="size-8 rounded-lg"><AvatarFallback className="rounded-lg bg-primary/15 font-semibold text-primary">{init}</AvatarFallback></Avatar>
+      <div className="grid flex-1 text-left text-sm leading-tight">
+        <span className="truncate font-medium">{name}</span>
+        <span className="truncate text-xs text-muted-foreground">{email}</span>
+      </div>
+    </>
+  );
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
-              <Avatar className="size-8 rounded-lg">
-                <AvatarFallback className="rounded-lg">OW</AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">Owner</span>
-                <span className="truncate text-xs text-muted-foreground">API key session</span>
-              </div>
+              {who}
               <EllipsisVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg" side={isMobile ? "bottom" : "right"} align="end" sideOffset={4}>
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="size-8 rounded-lg"><AvatarFallback className="rounded-lg">OW</AvatarFallback></Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">Owner</span>
-                  <span className="truncate text-xs text-muted-foreground">API key session</span>
-                </div>
-              </div>
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">{who}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => navigate("/settings")}><Settings /> Workspace settings</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open("/api/docs", "_blank")}><BookOpen /> API docs</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/account")}><UserRound /> Account</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/billing")}><CreditCard /> Billing &amp; credits</DropdownMenuItem>
+              {me?.is_superuser && <DropdownMenuItem onClick={() => navigate("/settings")}><Settings /> Platform settings</DropdownMenuItem>}
+              {me?.is_superuser && <DropdownMenuItem onClick={() => window.open("/api/docs", "_blank")}><BookOpen /> API docs</DropdownMenuItem>}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => auth.logout()}><LogOut /> Log out</DropdownMenuItem>
+            <DropdownMenuItem onClick={signOut}><LogOut /> Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
@@ -175,6 +192,7 @@ function UserMenu() {
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { pathname } = useLocation();
   const { siteId } = useCurrentSite();
+  const isOperator = !!useMe().data?.is_superuser;
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -186,10 +204,22 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === "/settings"} tooltip="Workspace settings">
-              <Link to="/settings"><Settings /><span>Workspace settings</span></Link>
+            <SidebarMenuButton asChild isActive={pathname === "/billing"} tooltip="Billing & credits">
+              <Link to="/billing"><CreditCard /><span>Billing &amp; credits</span></Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === "/account"} tooltip="Account">
+              <Link to="/account"><UserRound /><span>Account</span></Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {isOperator && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === "/settings"} tooltip="Platform settings">
+                <Link to="/settings"><Settings /><span>Platform settings</span></Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
         <UserMenu />
       </SidebarFooter>

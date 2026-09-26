@@ -6,6 +6,9 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
+# Company details for the Terms and Privacy pages (docker compose build --build-arg VITE_LEGAL_NAME=…)
+ARG VITE_LEGAL_NAME="" VITE_SUPPORT_EMAIL="" VITE_LEGAL_ADDRESS="" VITE_LEGAL_UPDATED=""
+ENV VITE_LEGAL_NAME=$VITE_LEGAL_NAME VITE_SUPPORT_EMAIL=$VITE_SUPPORT_EMAIL VITE_LEGAL_ADDRESS=$VITE_LEGAL_ADDRESS     VITE_LEGAL_UPDATED=$VITE_LEGAL_UPDATED
 RUN npm run build
 
 # ---------- Python app ----------

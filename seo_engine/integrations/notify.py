@@ -42,26 +42,43 @@ def _send_email(cfg: IntegrationsConfig, subject: str, body: str) -> None:
 
 
 async def send(cfg: IntegrationsConfig, title: str, body: str, *, url: str | None = None, level: str = "info",
-               event: str = "test", site: str | None = None) -> list[str]:
+               event: str = "test", site: str | None = None, untrusted: bool = False) -> list[str]:
     """Send to every configured channel. Returns the channels that accepted the message; raises only if every
-    configured channel failed (so the settings "test" button can show the error)."""
+    configured channel failed (so the settings "test" button can show the error).
+
+    `untrusted`: the webhook URLs came from a customer, so each is re-checked for a public address right before
+    sending (DNS can change after it was saved). Redirects are never followed."""
     delivered, errors = [], []
+
+    async def allowed(hook: str, name: str) -> bool:
+        if not untrusted:
+            return True
+        from ..services.common import ServiceError
+        from ..services.notifications import check_webhook_url
+
+        try:
+            await check_webhook_url(hook)
+            return True
+        except ServiceError as exc:
+            errors.append(f"{name}: {exc}")
+            return False
+
     link = f"\n{url}" if url else ""
     async with http_client(timeout=15) as client:
-        if cfg.slack_webhook_url:
+        if cfg.slack_webhook_url and await allowed(cfg.slack_webhook_url, "slack"):
             icon = {"warning": ":warning:", "error": ":rotating_light:"}.get(level, ":robot_face:")
             text = f"{icon} *{title}*" + (f" · {site}" if site else "") + f"\n{body}" + (f"\n<{url}|Open in Rankcrew>" if url else "")
             try:
-                r = await client.post(cfg.slack_webhook_url, json={"text": text})
+                r = await client.post(cfg.slack_webhook_url, json={"text": text}, follow_redirects=False)
                 r.raise_for_status()
                 delivered.append("slack")
             except httpx.HTTPError as exc:
                 errors.append(f"slack: {exc}")
-        if cfg.notify_webhook_url:
+        if cfg.notify_webhook_url and await allowed(cfg.notify_webhook_url, "webhook"):
             payload: dict[str, Any] = {"event": event, "title": title, "body": body, "url": url, "level": level,
                                        "site": site, "at": now().isoformat()}
             try:
-                r = await client.post(cfg.notify_webhook_url, json=payload)
+                r = await client.post(cfg.notify_webhook_url, json=payload, follow_redirects=False)
                 r.raise_for_status()
                 delivered.append("webhook")
             except httpx.HTTPError as exc:
@@ -79,24 +96,48 @@ async def send(cfg: IntegrationsConfig, title: str, body: str, *, url: str | Non
     return delivered
 
 
-async def notify_event(event: str, title: str, body: str, *, site_id: int | None = None, path: str = "",
-                       level: str = "info") -> list[str]:
-    """Fire-and-forget notification for a platform event, honouring the owner's event preferences."""
+async def notify_event(event: str, title: str, body: str, *, site_id: int | None = None,
+                       account_id: int | None = None, path: str = "", level: str = "info") -> list[str]:
+    """Fire-and-forget notification. Events about a customer's site go to that customer's own channels; platform
+    events (no account, or the operator workspace) go to the operator's channels."""
     try:
-        from ..db import Site, session_scope
+        from ..db import Account, Site, session_scope
         from ..services.integrations import get_integrations
 
-        cfg = await get_integrations()
+        site_name = None
+        async with session_scope() as s:
+            site = await s.get(Site, site_id) if site_id is not None else None
+            if site is not None:
+                site_name = site.name
+                account_id = account_id or site.account_id
+            acc = await s.get(Account, account_id) if account_id else None
+        if site_id is not None:
+            path = path or f"/sites/{site_id}/overview"
+        platform = await get_integrations()
+        customer = acc is not None and acc.kind == "customer"
+        if customer:
+            from ..services.notifications import channel_config
+
+            _, cfg = await channel_config(acc.id)
+        else:
+            cfg = platform
         if not cfg.notifications_configured or event not in cfg.notify_events:
             return []
-        site_name = None
-        if site_id is not None:
-            async with session_scope() as s:
-                site = await s.get(Site, site_id)
-            site_name = site.name if site else None
-            path = path or f"/sites/{site_id}/overview"
-        url = f"{cfg.public_url.rstrip('/')}{path}" if cfg.public_url else None
-        return await send(cfg, title, body[:3000], url=url, level=level, event=event, site=site_name)
+        url = f"{platform.public_url.rstrip('/')}{path}" if platform.public_url else None
+        return await send(cfg, title, body[:3000], url=url, level=level, event=event, site=site_name,
+                          untrusted=customer)
     except Exception as exc:  # never break the caller
         log.warning("notify_event(%s) failed: %s", event, exc)
         return []
+
+
+async def send_email(to: str, subject: str, body: str) -> bool:
+    """Transactional email (sign-up, password reset) through the platform SMTP server. False when not configured."""
+    from ..services.integrations import get_integrations
+
+    platform = await get_integrations()
+    if not platform.smtp_host:
+        return False
+    cfg = platform.model_copy(update={"notify_email": to})
+    await asyncio.to_thread(_send_email, cfg, subject, body)
+    return True

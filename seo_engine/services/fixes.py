@@ -87,11 +87,13 @@ async def list_fixes(site_id: int, status: str | None = None) -> list[Fix]:
         return list(await s.scalars(q.order_by(Fix.created_at.desc()).limit(2000)))
 
 
-async def set_status(ids: list[str], status: FixStatus) -> int:
+async def set_status(ids: list[str], status: FixStatus, site_ids: set[int] | None = None) -> int:
+    """`site_ids` restricts the update to those sites (tenant isolation); None = any site (operators)."""
+    q = update(Fix).where(Fix.id.in_(ids), Fix.status.in_(("proposed", "approved", "failed", "rejected")))
+    if site_ids is not None:
+        q = q.where(Fix.site_id.in_(site_ids or {-1}))
     async with session_scope() as s:
-        res = await s.execute(update(Fix).where(Fix.id.in_(ids), Fix.status.in_(("proposed", "approved", "failed",
-                                                                                 "rejected")))
-                              .values(status=status.value))
+        res = await s.execute(q.values(status=status.value))
         return res.rowcount or 0
 
 

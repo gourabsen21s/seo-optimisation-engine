@@ -105,8 +105,9 @@ export default function LandingPage() {
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const prev = document.title;
+    document.documentElement.classList.add("lp-root");
     document.title = `${BRAND.name}: your SEO team starts before you do`;
-    return () => { document.title = prev; };
+    return () => { document.title = prev; document.documentElement.classList.remove("lp-root"); };
   }, []);
   useDayClock(root);
 

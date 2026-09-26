@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmployeeAvatar } from "@/features/team/EmployeeAvatar";
-import { jobTracker, useAddKeywords, useCapabilities, useCheckRankings, useDeleteKeyword, useKeywordHistory, useKeywords, useTrackedJob } from "@/lib/hooks";
+import { jobTracker, useAddKeywords, useCapabilities, useCheckRankings, useDeleteKeyword, useKeywordHistory, useKeywords, useMe, useTrackedJob } from "@/lib/hooks";
 import type { TrackedKeyword } from "@/lib/types";
 import { cn, formatShortDate, pathOf, timeAgo } from "@/lib/utils";
 import { useSiteCtx } from "./SiteLayout";
@@ -175,6 +175,7 @@ function KeywordSheet({ siteId, keyword, onClose }: { siteId: number; keyword: T
 }
 
 export default function RankingsPage() {
+  const isOperator = !!useMe().data?.is_superuser;
   const { siteId, site } = useSiteCtx();
   const keywords = useKeywords(siteId);
   const caps = useCapabilities();
@@ -209,7 +210,7 @@ export default function RankingsPage() {
           <Target />
           <AlertTitle>Connect a rankings source</AlertTitle>
           <AlertDescription>
-            Add a search results provider (Serper, SerpAPI or Brave) in <Link to="/settings?tab=integrations" className="underline underline-offset-4">Workspace settings → Integrations</Link>, or connect Search Console in <Link to={`/sites/${siteId}/settings`} className="underline underline-offset-4">Site settings</Link>.
+            Connect Search Console in <Link to={`/sites/${siteId}/settings?tab=gsc`} className="underline underline-offset-4">Site settings</Link> to track average positions{isOperator ? <>, or add a live search results provider (Serper, SerpAPI or Brave) in <Link to="/settings?tab=integrations" className="underline underline-offset-4">Platform settings → Integrations</Link></> : ". Live rank checks appear here once they are switched on for your workspace"}.
           </AlertDescription>
         </Alert>
       )}

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 
 from ...services import chat as chat_service
 from ...services import cycles as cycle_service
 from ...services import sites as site_service
 from ...workers.queue import enqueue
+from ..deps import require_credits
 from ..schemas import ChatIn, CycleIn
 
 router = APIRouter(tags=["agent"])
 
 
-@router.post("/sites/{site_id}/cycles", status_code=202)
+@router.post("/sites/{site_id}/cycles", status_code=202, dependencies=[Depends(require_credits)])
 async def start_cycle(site_id: int, body: CycleIn | None = None):
     await site_service.get_site(site_id)
     return {"job_id": await enqueue("cycle", site_id, {"fresh_audit": (body or CycleIn()).fresh_audit})}
@@ -27,7 +28,7 @@ async def get_chat(site_id: int):
     return {"transcript": await chat_service.transcript(site_id)}
 
 
-@router.post("/sites/{site_id}/chat")
+@router.post("/sites/{site_id}/chat", dependencies=[Depends(require_credits)])
 async def send_chat(site_id: int, body: ChatIn):
     return await chat_service.send(site_id, body.message)
 

@@ -11,6 +11,7 @@ import { useSites } from "@/lib/hooks";
 import { useCurrentSite } from "@/lib/useCurrentSite";
 import { AppSidebar } from "./AppSidebar";
 import { CommandMenu } from "./CommandMenu";
+import { CreditsBanner, CreditsChip, VerifyBanner } from "./AccountBits";
 import { DayStrip } from "./DayStrip";
 import { sectionMeta } from "./nav";
 import { ThemeToggle } from "./ThemeToggle";
@@ -37,10 +38,10 @@ function Crumbs() {
             <BreadcrumbItem><BreadcrumbPage>{meta.label}</BreadcrumbPage></BreadcrumbItem>
           </>
         )}
-        {pathname === "/settings" && (
+        {({ "/settings": "Platform settings", "/billing": "Billing & credits", "/account": "Account" } as Record<string, string>)[pathname] && (
           <>
             <BreadcrumbSeparator />
-            <BreadcrumbItem><BreadcrumbPage>Workspace settings</BreadcrumbPage></BreadcrumbItem>
+            <BreadcrumbItem><BreadcrumbPage>{({ "/settings": "Platform settings", "/billing": "Billing & credits", "/account": "Account" } as Record<string, string>)[pathname]}</BreadcrumbPage></BreadcrumbItem>
           </>
         )}
       </BreadcrumbList>
@@ -91,11 +92,14 @@ export function AppShell() {
             <div className="ml-auto flex items-center gap-3">
               <DayStrip />
               <RunningJobs />
+              <CreditsChip />
               <CommandMenu />
               <ThemeToggle />
             </div>
           </div>
         </header>
+        <VerifyBanner />
+        <CreditsBanner />
         <div className="@container/main flex min-w-0 flex-1 flex-col">
           <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:px-6">
             <PageTransition>

@@ -1,6 +1,6 @@
 """Optional build verification: run the site's own scripts (build / lint / typecheck / test) in the workspace.
 
-This executes repository code, so it is disabled unless `code_execution_enabled` is on (Workspace settings →
+This executes repository code, so it is disabled unless `code_execution_enabled` is on (Platform settings →
 Integrations). Run Rankcrew in a container when enabling it.
 """
 

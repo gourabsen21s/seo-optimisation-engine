@@ -27,9 +27,10 @@ export function DayRail() {
       s.style.setProperty("--t", t.toFixed(4));
       s.style.setProperty("--sun", sunColor(sunAt(h)));
       s.setAttribute("aria-valuenow", h.toFixed(2));
-      s.setAttribute("aria-valuetext", fmtClock(h));
+      if (s.getAttribute("aria-valuetext") !== fmtClock(h)) s.setAttribute("aria-valuetext", fmtClock(h));
     }
-    if (time.current) time.current.textContent = fmtClock(h);
+    const txt = fmtClock(h);
+    if (time.current && time.current.textContent !== txt) time.current.textContent = txt;
     const cur = [...STOPS].reverse().find((a) => h >= a.h0 - 0.001);
     bar.current?.querySelectorAll<HTMLLIElement>("[data-stop]").forEach((li) => {
       if (li.dataset.stop === cur?.id) li.dataset.active = ""; else delete li.dataset.active;
@@ -121,8 +122,8 @@ export function DayRail() {
       </nav>
 
       <div className="lp-rail__actions">
-        <Link className="lp-btn lp-btn--ghost lp-btn--sm lp-hide-sm" to="/login">Open console</Link>
-        <a className="lp-btn lp-btn--primary lp-btn--sm" href="#deploy">Deploy the crew</a>
+        <Link className="lp-btn lp-btn--ghost lp-btn--sm lp-hide-sm" to="/login">Sign in</Link>
+        <Link className="lp-btn lp-btn--primary lp-btn--sm" to="/signup">Start free</Link>
       </div>
     </header>
   );

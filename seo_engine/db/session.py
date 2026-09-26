@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -24,7 +25,15 @@ def get_engine() -> AsyncEngine:
         kwargs["connect_args"] = {"timeout": 30}
     else:
         kwargs.update(pool_size=10, max_overflow=20)
-    return create_async_engine(url, **kwargs)
+    engine = create_async_engine(url, **kwargs)
+    if url.startswith("sqlite"):
+        # Enforce foreign keys (and ON DELETE CASCADE) like Postgres does; SQLite leaves them off by default.
+        @event.listens_for(engine.sync_engine, "connect")
+        def _fk_on(dbapi_conn, _):
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+    return engine
 
 
 @lru_cache

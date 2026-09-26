@@ -50,12 +50,150 @@ class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSONType, list[Any]: JSONType}
 
 
-class Site(Base):
-    __tablename__ = "sites"
+class Account(Base):
+    """A customer workspace: owns sites, credits and notification settings. Users belong to one account."""
+
+    __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
-    url: Mapped[str] = mapped_column(String(500), unique=True)
+    kind: Mapped[str] = mapped_column(String(20), default="customer")  # customer | operator
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
+    # Credit balance in millicredits (1 credit = 1000). May dip slightly below zero after a long AI task.
+    balance_mc: Mapped[int] = mapped_column(Integer, default=0)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100))
+    notify_secret: Mapped[str | None] = mapped_column(Text)  # encrypted JSON: webhooks, extra emails, events
+    credits_warned_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    users: Mapped[list[User]] = relationship(back_populates="account", cascade="all, delete-orphan")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)  # stored lower-cased
+    name: Mapped[str] = mapped_column(String(200), default="")
+    password_hash: Mapped[str] = mapped_column(String(300))
+    role: Mapped[str] = mapped_column(String(20), default="owner")  # owner | member
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)  # platform operator
+    email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    account: Mapped[Account] = relationship(back_populates="users")
+
+
+class UserSession(Base):
+    """A signed-in browser. Only the SHA-256 of the cookie token is stored."""
+
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+
+
+class AuthToken(Base):
+    """Single-use email verification and password reset tokens (hashed)."""
+
+    __tablename__ = "auth_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))  # verify_email | reset_password
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class CreditEntry(Base):
+    """Append-only credit ledger. The account balance is the running sum of these rows."""
+
+    __tablename__ = "credit_ledger"
+    __table_args__ = (Index("ix_credit_ledger_account_at", "account_id", "created_at"),
+                      UniqueConstraint("reason", "ref", name="uq_credit_ledger_reason_ref"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
+    amount_mc: Mapped[int] = mapped_column(Integer)  # + purchase / grant, - usage
+    balance_mc: Mapped[int] = mapped_column(Integer)  # balance after this entry
+    reason: Mapped[str] = mapped_column(String(30))  # signup | purchase | grant | audit | llm | rank_check | refund
+    # Idempotency key for one-off credits (e.g. the Stripe session id). Usage rows leave it NULL.
+    ref: Mapped[str | None] = mapped_column(String(200))
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"))
+    note: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+
+class Invite(Base):
+    """An invitation to join an account. Only the SHA-256 of the emailed token is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    invited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class ApiKey(Base):
+    """A customer API key, scoped to one account. Shown once at creation; only its hash is stored."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(100))
+    prefix: Mapped[str] = mapped_column(String(16))  # first characters, to recognise a key in the list
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class Purchase(Base):
+    """A credit pack bought through Stripe Checkout."""
+
+    __tablename__ = "purchases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    pack_id: Mapped[str] = mapped_column(String(40))
+    credits: Mapped[int] = mapped_column(Integer)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(10), default="usd")
+    stripe_session_id: Mapped[str | None] = mapped_column(String(200), unique=True)
+    payment_intent_id: Mapped[str | None] = mapped_column(String(200), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | paid | expired | failed | refunded
+    refunded_cents: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class Site(Base):
+    __tablename__ = "sites"
+    __table_args__ = (UniqueConstraint("account_id", "url", name="uq_sites_account_url"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    url: Mapped[str] = mapped_column(String(500))
     profile: Mapped[dict[str, Any]] = mapped_column(default=dict)
     connector_type: Mapped[str | None] = mapped_column(String(30))
     connector_secret: Mapped[str | None] = mapped_column(Text)  # encrypted JSON
@@ -267,6 +405,7 @@ class LLMUsage(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), index=True)
     actor: Mapped[str] = mapped_column(String(40))  # employee id or "chat"
     model: Mapped[str | None] = mapped_column(String(200))
     requests: Mapped[int] = mapped_column(Integer, default=0)

@@ -117,11 +117,15 @@ async def implement_change(ctx: RunContext[EmployeeDeps], instruction: str, file
     if remaining is not None and remaining < 20_000:
         return {"error": "Not enough LLM budget left today for a code edit."}
     await ctx.deps.log(f"Editing {', '.join(files[:4])}{'…' if len(files) > 4 else ''} with Aider")
+    usage: dict[str, Any] = {}
     try:
         res = await run_aider(ws, instruction, ctx.deps.cfg, files=files, read_only=read_only_files or [])
+        usage = res["usage"]
     except WorkspaceError as exc:
+        usage = getattr(exc, "usage", None) or {}  # a timed-out run still spent tokens
         raise ModelRetry(str(exc)) from exc
-    await budget.record(ctx.deps.site_id, f"{ctx.deps.employee_id}:aider", ctx.deps.cfg.model, res["usage"])
+    finally:
+        await budget.record(ctx.deps.site_id, f"{ctx.deps.employee_id}:aider", ctx.deps.cfg.model, usage)
     changed = await ws.changed_paths()
     problems = {p: code_inspect.syntax_errors(ws, p) for p in changed}
     return {"exit_code": res["exit_code"], "changed_files": changed, "diffstat": await ws.diffstat(),
@@ -149,7 +153,7 @@ async def run_site_check(ctx: RunContext[EmployeeDeps], script: str = "build") -
     """Run the site's own package.json script (build / lint / typecheck / test) to verify the change compiles.
     Only available when the owner enabled code execution."""
     if not (await get_integrations()).code_execution_enabled:
-        return {"skipped": "Code execution is disabled (Workspace settings → Integrations). Rely on review_changes "
+        return {"skipped": "Code execution is disabled (Platform settings → Integrations). Rely on review_changes "
                            "and syntax checks."}
     ws = await workspace(ctx)
     await ctx.deps.log(f"Running `{script}` to verify the change")
