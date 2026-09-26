@@ -23,11 +23,11 @@ from ..db import create_all
 from ..db.session import get_engine
 from ..services.accounts import AuthError, Conflict
 from ..services.billing import BillingUnavailable
-from ..services.common import NotFound, ServiceError
+from ..services.common import Forbidden, NotFound, ServiceError
 from ..services.credits import EmailNotVerified, InsufficientCredits
 from ..workers import queue, scheduler
 from .deps import require_resource_access
-from .routers import agent, audits, auth, billing, fixes, integrations, jobs, rankings, settings, sites, team
+from .routers import agent, audits, auth, billing, fixes, integrations, jobs, rankings, settings, sites, team, workspace
 
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
@@ -106,6 +106,10 @@ def create_app() -> FastAPI:
     async def unverified(_: Request, exc: EmailNotVerified):
         return JSONResponse({"detail": str(exc), "code": "email_not_verified"}, status_code=403)
 
+    @app.exception_handler(Forbidden)
+    async def forbidden(_: Request, exc: Forbidden):
+        return JSONResponse({"detail": str(exc)}, status_code=403)
+
     @app.exception_handler(AuthError)
     async def auth_failed(_: Request, exc: AuthError):
         return JSONResponse({"detail": str(exc)}, status_code=401)
@@ -130,7 +134,7 @@ def create_app() -> FastAPI:
     # Everything else needs a principal, and any site / job / audit / task / fix in the path must be theirs.
     protected = [Depends(require_resource_access)]
     for r in (sites.router, audits.router, fixes.router, agent.router, jobs.router, settings.router, team.router,
-              integrations.router, rankings.router, billing.router):
+              integrations.router, rankings.router, billing.router, workspace.router):
         app.include_router(r, prefix="/api", dependencies=protected)
 
     @app.get("/healthz", include_in_schema=False)

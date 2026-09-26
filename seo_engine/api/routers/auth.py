@@ -64,16 +64,22 @@ class DeleteIn(BaseModel):
     password: str = Field(max_length=200)
 
 
+def dev_links() -> bool:
+    """Return account links in API responses (local development without a mail server). Never in production."""
+    cfg = get_settings()
+    return cfg.dev_links and cfg.environment in ("development", "test")
+
+
 async def _base_url(request: Request) -> str | None:
-    """Where links in emails point. Production must use the configured public URL: trusting the request's Host
-    header would let anyone mint password-reset emails that link to their own domain."""
+    """Where links in emails point: the configured public URL. The request's Origin / Host headers are only
+    trusted in explicit dev-link mode, or anyone could mint reset emails that link to their own domain."""
     public = (await get_integrations()).public_url or get_settings().public_url
     if public:
         return public.rstrip("/")
-    if get_settings().environment == "production":
-        log.error("SEO_PUBLIC_URL is not set; cannot put links in account emails")
-        return None
-    return (request.headers.get("origin") or str(request.base_url)).rstrip("/")
+    if dev_links():
+        return (request.headers.get("origin") or str(request.base_url)).rstrip("/")
+    log.error("SEO_PUBLIC_URL is not set; cannot put links in account emails")
+    return None
 
 
 async def _email_link(request: Request, to: str, subject: str, intro: str, path: str) -> str | None:
@@ -88,7 +94,7 @@ async def _email_link(request: Request, to: str, subject: str, intro: str, path:
     except Exception as exc:  # a mail outage must not break sign-up
         log.error("sending %r to %s failed: %s", subject, to, exc)
         sent = False
-    if not sent and get_settings().environment != "production":
+    if not sent and dev_links():
         log.warning("No SMTP server configured. Link for %s: %s", to, link)
         return link
     return None
@@ -191,13 +197,41 @@ async def forgot(body: EmailIn, request: Request):
                                      "Someone asked to reset the password for this email. The link works for one hour:",
                                      f"/reset-password?token={token}")
     # Same answer either way, so this endpoint cannot be used to discover who has an account.
-    return {"ok": True, "dev_reset_url": dev_link if get_settings().environment != "production" else None}
+    return {"ok": True, "dev_reset_url": dev_link}
 
 
 @router.post("/auth/reset-password", dependencies=[Depends(csrf)])
 async def reset(body: ResetIn, request: Request, response: Response):
     limiter.hit(f"reset:{client_ip(request)}", 20, 3600)
     user = await accounts.reset_password(body.token, body.password)
+    token = await accounts.create_session(user.id, client_ip(request), request.headers.get("user-agent"))
+    _set_cookie(response, request, token)
+    return await _me(await accounts.principal_for_session(token))
+
+
+class AcceptIn(BaseModel):
+    token: str = Field(max_length=200)
+    name: str = Field(default="", max_length=200)
+    password: str = Field(max_length=200)
+    accept_terms: bool = False
+
+
+@router.get("/auth/invite")
+async def invite_info(token: str, request: Request):
+    from ...services import team
+
+    limiter.hit(f"invite-info:{client_ip(request)}", 60, 3600)
+    return await team.invite_info(token)
+
+
+@router.post("/auth/accept-invite", dependencies=[Depends(csrf)])
+async def accept_invite(body: AcceptIn, request: Request, response: Response):
+    from ...services import team
+
+    limiter.hit(f"accept:{client_ip(request)}", 20, 3600)
+    if not body.accept_terms:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Please accept the terms to join.")
+    user = await team.accept_invite(body.token, body.name, body.password)
     token = await accounts.create_session(user.id, client_ip(request), request.headers.get("user-agent"))
     _set_cookie(response, request, token)
     return await _me(await accounts.principal_for_session(token))

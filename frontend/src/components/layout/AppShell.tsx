@@ -11,7 +11,7 @@ import { useSites } from "@/lib/hooks";
 import { useCurrentSite } from "@/lib/useCurrentSite";
 import { AppSidebar } from "./AppSidebar";
 import { CommandMenu } from "./CommandMenu";
-import { CreditsChip, VerifyBanner } from "./AccountBits";
+import { CreditsBanner, CreditsChip, VerifyBanner } from "./AccountBits";
 import { DayStrip } from "./DayStrip";
 import { sectionMeta } from "./nav";
 import { ThemeToggle } from "./ThemeToggle";
@@ -99,6 +99,7 @@ export function AppShell() {
           </div>
         </header>
         <VerifyBanner />
+        <CreditsBanner />
         <div className="@container/main flex min-w-0 flex-1 flex-col">
           <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:px-6">
             <PageTransition>

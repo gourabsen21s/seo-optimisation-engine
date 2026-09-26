@@ -103,7 +103,7 @@ async def search(query: str, cfg: IntegrationsConfig, num: int = 10, country: st
                  language: str | None = None, use_cache: bool = True) -> SerpPage:
     if not cfg.serp_configured:
         raise ResearchError("No search results provider is configured. Add a Serper, SerpAPI or Brave key in "
-                            "Workspace settings → Integrations.")
+                            "Platform settings → Integrations.")
     query = query.strip()[:300]
     if not query:
         raise ResearchError("empty query")

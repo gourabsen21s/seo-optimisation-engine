@@ -2,6 +2,7 @@ from .models import (
            Account,
            Activity,
            AgentRun,
+           ApiKey,
            AppSetting,
            Audit,
            AuthToken,
@@ -9,6 +10,7 @@ from .models import (
            ChatSession,
            CreditEntry,
            Fix,
+           Invite,
            Job,
            LLMUsage,
            MetricSnapshot,
@@ -24,5 +26,5 @@ from .models import (
 )
 from .session import create_all, get_session, get_sessionmaker, session_scope
 
-__all__ = ["Account", "AuthToken", "CreditEntry", "Purchase", "User", "UserSession", "Activity", "AgentRun", "Report", "Task", "TaskComment", "AppSetting", "Audit", "Base", "ChatSession", "Fix", "Job", "MetricSnapshot", "Site", "LLMUsage", "RankSnapshot", "TrackedKeyword",
+__all__ = ["ApiKey", "Invite", "Account", "AuthToken", "CreditEntry", "Purchase", "User", "UserSession", "Activity", "AgentRun", "Report", "Task", "TaskComment", "AppSetting", "Audit", "Base", "ChatSession", "Fix", "Job", "MetricSnapshot", "Site", "LLMUsage", "RankSnapshot", "TrackedKeyword",
            "create_all", "get_session", "get_sessionmaker", "session_scope"]

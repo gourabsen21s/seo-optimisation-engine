@@ -136,8 +136,8 @@ async def check_rankings(site_id: int, report: JobReporter | None = None) -> dic
     else:
         gsc = gsc_for(site)
         if gsc is None:
-            raise ServiceError("Rank tracking needs a search results provider (Workspace settings → Integrations) "
-                               "or Search Console connected for this site.")
+            raise ServiceError("Live rank checks are not switched on for this workspace yet. Connect Search Console in "
+                               "Site settings to track average positions instead.")
         if report:
             await report(f"Reading average positions for {len(keywords)} keywords from Search Console")
         rows = await gsc.performance(days=7, dimensions=("query", "page"), row_limit=25000)

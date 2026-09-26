@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from ..agent.llm import build_model, model_settings
 from ..db import Audit, Fix, MetricSnapshot, Report, Site, Task, session_scope
 from ..knowledge.memory import TEAM, get_memory
+from ..services import budget
 from ..services.common import JobReporter, NotFound, now
 from ..services.settings import get_llm_config
 from .roster import MANAGER, ROSTER
@@ -70,13 +71,16 @@ async def weekly_report(site_id: int, report: JobReporter | None = None) -> dict
     facts += ["Team memory highlights:"] + [f"- {m['text']}" for m in (await get_memory().list(site_id, TEAM))[:15]]
     data = "\n".join(facts)
     try:
+        remaining = await budget.ensure_budget(site_id, MANAGER)  # out of credits: the factual digest below
         cfg = await get_llm_config()
         agent = Agent(build_model(cfg), instructions=ROSTER[MANAGER].card() + (
             "\nWrite the weekly report for the site owner in Markdown: headline results, what the team did, "
             "measured impact (honest about what is not yet measurable), risks, and next week's plan. Keep it under "
             "400 words. Never promise rankings."), model_settings=model_settings(cfg))
-        content = (await agent.run(data, usage_limits=UsageLimits(request_limit=3))).output
-    except Exception:  # no LLM configured or it failed: fall back to a factual digest
+        content = (await agent.run(data, capabilities=[budget.meter(site_id, MANAGER, cfg.model)],
+                                   usage_limits=UsageLimits(request_limit=3,
+                                                            total_tokens_limit=remaining or None))).output
+    except Exception:  # no LLM configured, no credits, or it failed: fall back to a factual digest
         content = "# Weekly report\n\n" + data
     async with session_scope() as s:
         rep = Report(site_id=site_id, kind="weekly", author=MANAGER, title=f"Weekly report — week of {since:%d %b}",

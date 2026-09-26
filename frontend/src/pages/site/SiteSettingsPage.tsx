@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Globe2, PlugZap, Save, Settings2, Trash2, UserRound, XCircle, Code2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/blocks";
@@ -102,7 +102,7 @@ function Connector() {
             <FieldLabel>Type</FieldLabel>
             <Select value={type} onValueChange={(v) => setType(v as ConnectorType)}>
               <SelectTrigger className="w-full md:w-80"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="wordpress">WordPress (REST API + bridge plugin)</SelectItem><SelectItem value="github">GitHub (pull requests + code edits)</SelectItem><SelectItem value="local">Local files (+ code edits)</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="wordpress">WordPress (REST API + bridge plugin)</SelectItem><SelectItem value="github">GitHub (pull requests + code edits)</SelectItem>{fields.data?.local && <SelectItem value="local">Local files (+ code edits)</SelectItem>}</SelectContent>
             </Select>
           </Field>
           {(type === "github" || type === "local") && <Alert><Code2 /><AlertTitle>Unlocks source-code edits</AlertTitle><AlertDescription>Ezra, your Web Engineer, can change framework code (Next.js, Astro, Hugo, Jekyll…) in this repository. Every change is reviewed as a diff and ships as a pull request.</AlertDescription></Alert>}
@@ -223,10 +223,11 @@ function Danger() {
 }
 
 export default function SiteSettingsPage() {
+  const tabParam = useSearchParams()[0].get("tab");
   return (
     <div className="grid gap-5">
       <PageHeader icon={<Settings2 />} title="Site settings" description="Autopilot, connections and the publisher profile." />
-      <Tabs defaultValue="general" className="gap-5">
+      <Tabs defaultValue={tabParam ?? "general"} className="gap-5">
         <TabsList className="w-full justify-start overflow-x-auto md:w-fit">
           <TabsTrigger value="general"><Settings2 /> General</TabsTrigger>
           <TabsTrigger value="connector"><PlugZap /> Connector</TabsTrigger>

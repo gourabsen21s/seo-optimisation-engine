@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiError, sessionEvents } from "@/lib/api";
 import { qk, useMe } from "@/lib/hooks";
 import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/auth/AccountFlows";
+import { AcceptInvitePage } from "@/pages/auth/AcceptInvitePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { SignupPage } from "@/pages/auth/SignupPage";
@@ -98,6 +99,7 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/invite" element={<AcceptInvitePage />} />
               <Route path="/terms" element={<Suspense fallback={<Splash />}><LegalPage doc="terms" /></Suspense>} />
               <Route path="/privacy" element={<Suspense fallback={<Splash />}><LegalPage doc="privacy" /></Suspense>} />
               <Route element={<RequireAuth><AppShell /></RequireAuth>}>

@@ -25,6 +25,10 @@ class NotFound(ServiceError):
     pass
 
 
+class Forbidden(ServiceError):
+    """Signed in, but this role may not do that (HTTP 403)."""
+
+
 @lru_cache
 def secret_box() -> SecretBox:
     return SecretBox(get_settings().secret_key)

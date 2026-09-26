@@ -15,7 +15,7 @@ OPR_URL = "https://openpagerank.com/api/v1.0/getPageRank"
 async def domain_authority(domains: list[str], cfg: IntegrationsConfig) -> list[dict]:
     if not cfg.openpagerank_api_key:
         raise ResearchError("Domain authority needs an Open PageRank key (free at openpagerank.com) — add it in "
-                            "Workspace settings → Integrations.")
+                            "Platform settings → Integrations.")
     clean = sorted({d.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0].removeprefix("www.")
                     for d in domains if d.strip()})[:100]
     if not clean:

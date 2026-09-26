@@ -70,6 +70,12 @@ async def tick() -> list[int]:
                                         .order_by(Job.id.desc()).limit(1))
         if _due(last_check, 24):
             enqueued.append(await enqueue("rank_check", site.id, dedupe=False))
+    try:  # expired sessions, one-time tokens and invitations
+        from ..services.team import purge_expired
+
+        await purge_expired()
+    except Exception:
+        log.exception("session purge failed")
     try:  # workspaces left behind by crashed code tasks
         from ..code.workspace import purge_stale
 

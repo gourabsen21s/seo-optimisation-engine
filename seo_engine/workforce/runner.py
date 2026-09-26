@@ -145,8 +145,8 @@ async def _run_llm_employee(task: Task, report: JobReporter) -> dict[str, Any]:
                          total_tokens_limit=remaining or None)
     code_note: dict[str, Any] = {}
     try:
-        result = await agent.run(prompt, deps=deps, usage_limits=limits)
-        await budget.record(site.id, task.assignee, deps.cfg.model, result.usage)
+        result = await agent.run(prompt, deps=deps, usage_limits=limits,
+                                 capabilities=[budget.meter(site.id, task.assignee, deps.cfg.model)])
         out: TaskResult = result.output
         proposals = list(deps.proposals)
         if deps.workspace is not None:

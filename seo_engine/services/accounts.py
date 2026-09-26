@@ -126,8 +126,8 @@ async def signup(email: str, password: str, name: str = "", company: str = "") -
         acc = Account(name=(company or "").strip()[:200] or (f"{name}'s workspace" if name else email.split("@")[0]))
         s.add(acc)
         await s.flush()
-        user = User(account_id=acc.id, email=email, name=name, password_hash=hash_password(password), role="owner",
-                    is_superuser=email in cfg.admin_email_list)
+        # Never superuser at sign-up: anyone can type an admin's address. Promotion waits for a verified email.
+        user = User(account_id=acc.id, email=email, name=name, password_hash=hash_password(password), role="owner")
         s.add(user)
         await s.flush()
         account_id = acc.id
@@ -150,14 +150,19 @@ async def authenticate(email: str, password: str) -> User:
             verify_password(password, _DUMMY)
             raise generic
         if user.locked_until and user.locked_until > now():
+            verify_password(password, _DUMMY)  # same timing as a normal attempt
             raise AuthError("Too many failed attempts. Try again in a few minutes or reset your password.")
         ok = verify_password(password, user.password_hash)
-        if not ok:
-            # Commit the failure before raising: raising inside this block would roll it back.
-            user.failed_logins += 1
-            if user.failed_logins >= MAX_FAILED_LOGINS:
-                user.locked_until, user.failed_logins = now() + LOCKOUT, 0
+        user_id = user.id
     if not ok:
+        # Count atomically (concurrent guesses must not lose increments), and commit before raising.
+        async with session_scope() as s:
+            fails = (await s.execute(update(User).where(User.id == user_id)
+                                     .values(failed_logins=User.failed_logins + 1)
+                                     .returning(User.failed_logins))).scalar_one()
+            if fails >= MAX_FAILED_LOGINS:
+                await s.execute(update(User).where(User.id == user_id)
+                                .values(locked_until=now() + LOCKOUT, failed_logins=0))
         raise generic
     async with session_scope() as s:
         user = await s.get(User, user.id)
@@ -165,9 +170,15 @@ async def authenticate(email: str, password: str) -> User:
         if acc is None or acc.status != "active":
             raise AuthError("This account is suspended. Contact support.")
         user.failed_logins, user.locked_until, user.last_login_at = 0, None, now()
-        if user.email in get_settings().admin_email_list:
-            user.is_superuser = True
+        _promote_admin(user)
         return user
+
+
+def _promote_admin(user: User) -> None:
+    """SEO_ADMIN_EMAILS become operators, but only once the address is verified: an unverified sign-up with an
+    admin's email proves nothing about who is behind it."""
+    if user.email_verified_at is not None and user.email in get_settings().admin_email_list:
+        user.is_superuser = True
 
 
 async def create_session(user_id: int, ip: str | None, user_agent: str | None) -> str:
@@ -176,6 +187,8 @@ async def create_session(user_id: int, ip: str | None, user_agent: str | None) -
         s.add(UserSession(token_hash=_hash_token(token), user_id=user_id, ip=(ip or "")[:64],
                           user_agent=(user_agent or "")[:300],
                           expires_at=now() + timedelta(days=get_settings().session_days)))
+        # Every new session counts as a sign-in (sign-up and accepting an invite start one too).
+        await s.execute(update(User).where(User.id == user_id).values(last_login_at=now()))
     return token
 
 
@@ -195,8 +208,10 @@ async def principal_for_session(token: str) -> Principal | None:
             return None
         if now() - row.last_seen_at > timedelta(minutes=10):
             row.last_seen_at = now()
-        return Principal(account_id=user.account_id, user_id=user.id, is_superuser=user.is_superuser,
-                         email_verified=user.email_verified_at is not None, via="session")
+        verified = user.email_verified_at is not None
+        # Operator rights need a proven address, whatever the flag says.
+        return Principal(account_id=user.account_id, user_id=user.id, is_superuser=user.is_superuser and verified,
+                         email_verified=verified, via="session")
 
 
 async def end_session(token: str) -> None:
@@ -238,6 +253,7 @@ async def verify_email(token: str) -> User:
         user = await s.get(User, user_id)
         if user.email_verified_at is None:
             user.email_verified_at = now()
+        _promote_admin(user)
         return user
 
 

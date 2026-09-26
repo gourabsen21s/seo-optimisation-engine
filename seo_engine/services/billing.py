@@ -15,7 +15,8 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from ..core.config import get_settings
 from ..db import Account, Purchase, User, session_scope
@@ -159,7 +160,49 @@ async def handle_webhook(payload: bytes, signature: str) -> dict[str, Any]:
     if kind in ("checkout.session.expired", "checkout.session.async_payment_failed"):
         await _mark(obj.get("id"), "expired" if kind.endswith("expired") else "failed")
         return {"status": "closed"}
+    if kind == "charge.refunded":
+        return await refund(obj)
     return {"status": "ignored"}
+
+
+class RetryLater(BillingUnavailable):
+    """The webhook cannot be applied yet; a non-2xx answer makes Stripe send it again later."""
+
+
+async def refund(charge: dict[str, Any]) -> dict[str, Any]:
+    """Take back the credits for the refunded share of a purchase. Idempotent per refunded total, so partial
+    refunds and repeated webhooks each remove exactly what is newly refunded."""
+    pi = charge.get("payment_intent")
+    refunded = int(charge.get("amount_refunded") or 0)
+    if not pi or refunded <= 0:
+        return {"status": "ignored"}
+    ref_id = str((charge.get("metadata") or {}).get("purchase_id") or "")
+    try:
+        async with session_scope() as s:
+            row = await s.scalar(select(Purchase).where(Purchase.payment_intent_id == pi))
+            if row is None and ref_id.isdigit():
+                row = await s.get(Purchase, int(ref_id))
+            if row is None or row.status not in ("paid", "refunded"):
+                # Events can arrive out of order: refund only what has been paid for, so ask Stripe to retry.
+                raise RetryLater(f"refund for payment {pi} arrived before the payment was recorded")
+            total = int(charge.get("amount") or row.amount_cents)  # what was charged, tax included
+            refunded, prev = min(refunded, total), row.refunded_cents or 0
+            if refunded <= prev:
+                return {"status": "already_refunded"}
+            # Compare-and-swap on the refunded total: a concurrent webhook for the same charge matches nothing.
+            res = await s.execute(update(Purchase).where(Purchase.id == row.id, Purchase.refunded_cents == prev)
+                                  .values(refunded_cents=refunded, payment_intent_id=pi,
+                                          status="refunded" if refunded >= total else row.status))
+            if res.rowcount != 1:
+                raise RetryLater("another refund for this payment is being applied")
+            # Credits for the newly refunded share, removed in the same transaction as the purchase update.
+            delta = row.credits * credits.MC * refunded // total - row.credits * credits.MC * prev // total
+            if delta > 0:
+                await credits.apply_in(s, row.account_id, -delta, "refund", ref=f"refund:{pi}:{refunded}",
+                                       note=f"{row.pack_id} pack refunded")
+    except IntegrityError:
+        return {"status": "already_refunded"}
+    return {"status": "refunded", "credits_removed": delta / credits.MC}
 
 
 async def _mark(session_id: str | None, status: str) -> None:
@@ -184,9 +227,12 @@ async def fulfil(session: dict[str, Any]) -> dict[str, Any]:
         if int(session.get("amount_total") or 0) < row.amount_cents:
             log.error("stripe session %s paid %s, expected %s", sid, session.get("amount_total"), row.amount_cents)
             return {"status": "amount_mismatch"}
-        already = row.status == "paid"
-        row.status, row.paid_at = "paid", row.paid_at or now()
+        already = row.status in ("paid", "refunded")
+        if not already:  # a replayed "completed" event must not undo a later refund
+            row.status = "paid"
+        row.paid_at = row.paid_at or now()
         row.stripe_session_id = row.stripe_session_id or sid
+        row.payment_intent_id = row.payment_intent_id or session.get("payment_intent")
         account_id, amount, pack_id = row.account_id, row.credits, row.pack_id
         if session.get("customer"):
             acc = await s.get(Account, account_id)
@@ -201,5 +247,6 @@ async def purchases(account_id: int, limit: int = 50) -> list[dict[str, Any]]:
         rows = list(await s.scalars(select(Purchase).where(Purchase.account_id == account_id)
                                     .order_by(Purchase.id.desc()).limit(limit)))
     return [{"id": r.id, "pack_id": r.pack_id, "credits": r.credits, "amount_cents": r.amount_cents,
-             "currency": r.currency, "status": r.status, "created_at": r.created_at, "paid_at": r.paid_at}
+             "currency": r.currency, "status": r.status, "refunded_cents": r.refunded_cents or 0,
+             "created_at": r.created_at, "paid_at": r.paid_at}
             for r in rows]

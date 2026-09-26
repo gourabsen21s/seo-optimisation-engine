@@ -20,7 +20,7 @@ import { cn, formatDateTime } from "@/lib/utils";
 
 const REASONS: Record<string, string> = {
   signup: "Welcome credits", purchase: "Credit pack", grant: "Added by support", adjustment: "Adjustment",
-  audit: "Audit", llm: "AI work", rank_check: "Rank check", refund: "Refund",
+  audit: "Audit", llm: "AI work", rank_check: "Rank check", research: "Live search", refund: "Refund",
 };
 const money = (cents: number, currency: string) =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
@@ -100,14 +100,18 @@ export default function BillingPage() {
           <CardHeader>
             <CardDescription className="flex items-center gap-2"><Coins className="size-4 text-primary" /> Balance</CardDescription>
             <CardTitle className="font-display text-6xl font-semibold tracking-tight tabular-nums">
-              <AnimatedNumber value={Math.max(0, b.credits)} decimals={Number.isInteger(b.credits) ? 0 : 1} />
-              <span className="ml-2 font-sans text-lg font-normal text-muted-foreground">credits</span>
+              {b.metered ? (
+                <>
+                  <AnimatedNumber value={Math.max(0, b.credits)} decimals={Number.isInteger(b.credits) ? 0 : 1} />
+                  <span className="ml-2 font-sans text-lg font-normal text-muted-foreground">credits</span>
+                </>
+              ) : "Unmetered"}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             {!b.metered ? (
               <p className="text-muted-foreground">This is the operator workspace. Its work is not metered.</p>
-            ) : b.credits <= 0 ? (
+            ) : b.credits < 1 ? (
               <p className="font-medium text-destructive">You are out of credits, so audits, AI tasks and rank checks are paused. Buy a pack below to resume.</p>
             ) : (
               <p className="text-muted-foreground">Spent in the last {b.spend.days} days: <b className="text-foreground tabular-nums">{fmtCredits(spent)}</b></p>
@@ -135,7 +139,7 @@ export default function BillingPage() {
               <TableBody>
                 {b.prices.map((p) => (
                   <TableRow key={p.item}>
-                    <TableCell className="font-medium">{p.item}<span className="block text-xs font-normal text-muted-foreground">{p.unit}</span></TableCell>
+                    <TableCell className="font-medium whitespace-normal">{p.item}<span className="block text-xs font-normal text-muted-foreground">{p.unit}</span></TableCell>
                     <TableCell className="text-right tabular-nums">{p.credits ? `${fmtCredits(p.credits)} credit${p.credits === 1 ? "" : "s"}` : "Free"}</TableCell>
                   </TableRow>
                 ))}
@@ -199,7 +203,7 @@ export default function BillingPage() {
                       <TableCell className="font-medium capitalize">{p.pack_id}</TableCell>
                       <TableCell className="text-right tabular-nums">{p.credits.toLocaleString()}</TableCell>
                       <TableCell className="text-right tabular-nums">{money(p.amount_cents, p.currency)}</TableCell>
-                      <TableCell className="text-right"><Pill tone={p.status === "paid" ? "success" : p.status === "pending" ? "warning" : "neutral"}>{p.status === "pending" ? "Awaiting payment" : p.status}</Pill></TableCell>
+                      <TableCell className="text-right"><Pill tone={p.status === "paid" ? (p.refunded_cents ? "warning" : "success") : p.status === "pending" ? "warning" : "neutral"}>{p.status === "pending" ? "Awaiting payment" : p.status === "paid" && p.refunded_cents ? `Refunded ${money(p.refunded_cents, p.currency)}` : p.status}</Pill></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

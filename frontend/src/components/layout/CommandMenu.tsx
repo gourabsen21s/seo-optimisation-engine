@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Globe, Moon, Play, Search, Settings, Sparkles, Sun } from "lucide-react";
+import { CreditCard, Globe, Moon, Play, Search, Settings, Sparkles, Sun, UserRound } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
-import { useSites, useStartAudit, useStartCycle } from "@/lib/hooks";
+import { useMe, useSites, useStartAudit, useStartCycle } from "@/lib/hooks";
 import { useCurrentSite } from "@/lib/useCurrentSite";
 import { SITE_NAV } from "./nav";
 
@@ -27,6 +27,7 @@ export function CommandMenu() {
   const { siteId } = useCurrentSite();
   const sites = useSites();
   const { resolvedTheme, setTheme } = useTheme();
+  const isOperator = !!useMe().data?.is_superuser;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,7 +80,9 @@ export function CommandMenu() {
             <CommandItem onSelect={() => { setTheme(resolvedTheme === "dark" ? "light" : "dark"); setOpen(false); }}>
               {resolvedTheme === "dark" ? <Sun /> : <Moon />} Switch to {resolvedTheme === "dark" ? "light" : "dark"} mode
             </CommandItem>
-            <CommandItem onSelect={() => go("/settings")}><Settings /> Workspace settings</CommandItem>
+            <CommandItem onSelect={() => go("/billing")}><CreditCard /> Billing &amp; credits</CommandItem>
+            <CommandItem onSelect={() => go("/account")}><UserRound /> Account</CommandItem>
+            {isOperator && <CommandItem onSelect={() => go("/settings")}><Settings /> Platform settings</CommandItem>}
           </CommandGroup>
         </CommandList>
       </CommandDialog>

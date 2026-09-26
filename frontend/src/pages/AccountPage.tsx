@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCircle2, KeyRound, Save, Send, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ApiKeysCard, TeamCard } from "@/features/account/WorkspaceCards";
 import { api, errorMessage } from "@/lib/api";
 import { qk, useAccountNotify, useMe } from "@/lib/hooks";
 import { PasswordInput, StrengthMeter } from "@/pages/auth/AuthLayout";
@@ -106,6 +108,8 @@ function Password() {
 }
 
 function Notifications() {
+  const me = useMe().data!;
+  const isOwner = me.user?.role === "owner";
   const q = useAccountNotify();
   const qc = useQueryClient();
   const [emailMembers, setEmailMembers] = useState(true);
@@ -144,13 +148,14 @@ function Notifications() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Bell className="size-5 text-primary" /> Notifications</CardTitle>
-        <CardDescription>Where the crew tells you about questions, finished cycles and anything that needs you.</CardDescription>
+        <CardDescription>Where the crew tells you about questions, finished cycles and anything that needs you.{!isOwner && " Only workspace owners can change these."}</CardDescription>
       </CardHeader>
       <CardContent>
+        <fieldset disabled={!isOwner} className="contents">
         <FieldGroup>
           <Field orientation="horizontal">
             <Switch id="em" checked={emailMembers} onCheckedChange={setEmailMembers} disabled={!d.email_available} />
-            <FieldLabel htmlFor="em" className="font-normal">Email me{!d.email_available && <span className="text-muted-foreground"> (email is not available on this server yet)</span>}</FieldLabel>
+            <FieldLabel htmlFor="em" className="font-normal">Email everyone in this workspace{!d.email_available && <span className="text-muted-foreground"> (email is not available on this server yet)</span>}</FieldLabel>
           </Field>
           <Field>
             <FieldLabel htmlFor="extra">Also email</FieldLabel>
@@ -175,11 +180,14 @@ function Notifications() {
             ))}
           </fieldset>
         </FieldGroup>
+        </fieldset>
       </CardContent>
-      <CardFooter className="gap-2">
-        <Button disabled={busy} onClick={save}>{busy ? <Spinner /> : <Save />} Save</Button>
-        <Button variant="outline" onClick={test}><Send /> Send a test</Button>
-      </CardFooter>
+      {isOwner && (
+        <CardFooter className="gap-2">
+          <Button disabled={busy} onClick={save}>{busy ? <Spinner /> : <Save />} Save</Button>
+          <Button variant="outline" onClick={test}><Send /> Send a test</Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }
@@ -230,15 +238,31 @@ function DangerZone() {
 
 export default function AccountPage() {
   const me = useMe().data;
+  const [params, setParams] = useSearchParams();
   if (!me) return null;
+  const tab = params.get("tab") ?? "profile";
+  const setTab = (v: string) => setParams((p) => { const n = new URLSearchParams(p); n.set("tab", v); return n; }, { replace: true });
   return (
-    <div className="grid gap-6">
-      <PageHeader title="Account" description={me.user ? `Signed in as ${me.user.email}` : "Operator API key session"} />
+    <div className="grid max-w-5xl gap-6">
+      <PageHeader title="Account" description={me.user ? `Signed in as ${me.user.email} · ${me.account.name}` : "Operator API key session"} />
       {me.user ? (
-        <div className="grid items-start gap-6 xl:grid-cols-2">
-          <div className="grid gap-6"><Profile /><Password /></div>
-          <div className="grid gap-6"><Notifications /><DangerZone /></div>
-        </div>
+        <Tabs value={tab} onValueChange={setTab} className="gap-6">
+          <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+            <TabsList>
+              <TabsTrigger value="profile">Profile &amp; security</TabsTrigger>
+              <TabsTrigger value="team">Team</TabsTrigger>
+              <TabsTrigger value="keys">API keys</TabsTrigger>
+              <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="profile" className="grid items-start gap-6 lg:grid-cols-2">
+            <Profile />
+            <div className="grid gap-6"><Password /><DangerZone /></div>
+          </TabsContent>
+          <TabsContent value="team"><TeamCard /></TabsContent>
+          <TabsContent value="keys"><ApiKeysCard /></TabsContent>
+          <TabsContent value="notifications"><Notifications /></TabsContent>
+        </Tabs>
       ) : (
         <p className="text-muted-foreground">Operator keys have no profile. Sign in with an account to manage one.</p>
       )}

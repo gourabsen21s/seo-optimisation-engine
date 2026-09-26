@@ -15,7 +15,7 @@ from ...services import billing, budget, credits
 from ...services import notifications as notify_service
 from ...services.accounts import Principal
 from ...services.integrations import get_integrations
-from ..deps import current_principal, require_superuser, require_user
+from ..deps import current_principal, limiter, require_owner, require_superuser, require_user
 
 public = APIRouter(tags=["billing"])  # no authentication
 router = APIRouter(tags=["billing"])
@@ -68,19 +68,20 @@ async def get_notifications(p: Principal = Depends(current_principal)):
 
 
 @router.put("/account/notifications")
-async def put_notifications(body: notify_service.AccountNotifyUpdate, p: Principal = Depends(require_user)):
+async def put_notifications(body: notify_service.AccountNotifyUpdate, p: Principal = Depends(require_owner)):
     await notify_service.update(p.account_id, body)
     return await notify_service.public(p.account_id)
 
 
 @router.post("/account/notifications/test")
-async def test_notifications(p: Principal = Depends(require_user)):
+async def test_notifications(p: Principal = Depends(require_owner)):
+    limiter.hit(f"notify-test:{p.account_id}", 5, 3600)  # it sends real email through the platform's SMTP
     _, cfg = await notify_service.channel_config(p.account_id)
     if not cfg.notifications_configured:
         return {"ok": False, "message": "Add an email, Slack or webhook channel first."}
     try:
         channels = await send(cfg, "Test notification", "Notifications from your Rankcrew crew will look like this.",
-                              event="test")
+                              event="test", untrusted=True)
         return {"ok": True, "message": f"Sent via {', '.join(channels)}"}
     except RuntimeError as exc:
         return {"ok": False, "message": str(exc)}

@@ -24,6 +24,14 @@ export function AccountsTab() {
   const [target, setTarget] = useState<AdminAccount | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const setStatus = async (a: AdminAccount, value: "active" | "suspended") => {
+    if (value === "suspended" && !window.confirm(`Suspend ${a.name}? Its members are signed out and its crew stops until you reactivate it.`)) return;
+    try {
+      await api.adminStatus(a.id, value);
+      toast.success(`${a.name} ${value === "active" ? "reactivated" : "suspended"}`);
+      qc.invalidateQueries({ queryKey: ["admin-accounts"] });
+    } catch (e) { toast.error(errorMessage(e)); }
+  };
   const grant = async () => {
     if (!target) return;
     try {
@@ -55,7 +63,12 @@ export function AccountsTab() {
                   <TableCell className="text-right tabular-nums">{a.sites}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmtCredits(a.credits)}</TableCell>
                   <TableCell className="hidden text-muted-foreground md:table-cell">{formatShortDate(a.created_at)}</TableCell>
-                  <TableCell className="text-right">{a.kind === "customer" && <Button size="sm" variant="outline" onClick={() => setTarget(a)}><Coins /> Credits</Button>}</TableCell>
+                  <TableCell className="text-right">{a.kind === "customer" && (
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setTarget(a)}><Coins /> Credits</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setStatus(a, a.status === "active" ? "suspended" : "active")}>{a.status === "active" ? "Suspend" : "Reactivate"}</Button>
+                    </div>
+                  )}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

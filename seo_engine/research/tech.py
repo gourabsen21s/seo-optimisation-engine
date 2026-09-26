@@ -23,7 +23,7 @@ async def pagespeed(url: str, cfg: IntegrationsConfig, strategy: str = "mobile")
         params.append(("key", cfg.pagespeed_api_key))
     resp = await request("GET", PSI_URL, service="pagespeed", concurrency=2, retries=1, time_limit=150, params=params)
     if resp.status_code == 429:
-        raise ResearchError("PageSpeed quota exceeded — add a PageSpeed API key in Workspace settings → Integrations.")
+        raise ResearchError("PageSpeed quota exceeded — add a PageSpeed API key in Platform settings → Integrations.")
     if resp.status_code >= 400:
         raise ResearchError(f"PageSpeed: HTTP {resp.status_code}: {resp.text[:200]}")
 
@@ -36,7 +36,7 @@ async def pagespeed(url: str, cfg: IntegrationsConfig, strategy: str = "mobile")
 
 async def indexnow_submit(host: str, key: str, urls: list[str]) -> dict:
     if not key:
-        raise ResearchError("IndexNow needs a key — set one in Workspace settings → Integrations.")
+        raise ResearchError("IndexNow needs a key — set one in Platform settings → Integrations.")
     urls = [u for u in urls if u.startswith(("http://", "https://"))][:10_000]
     if not urls:
         raise ResearchError("no valid URLs")

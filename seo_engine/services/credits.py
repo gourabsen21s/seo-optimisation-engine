@@ -19,6 +19,8 @@ from .common import NotFound, ServiceError, now
 
 log = logging.getLogger(__name__)
 MC = 1000
+# Work only starts with at least one credit, so a sliver of balance cannot fund a whole task or crawl.
+MIN_START_MC = MC
 
 
 class InsufficientCredits(ServiceError):
@@ -49,20 +51,28 @@ async def balance(account_id: int) -> int:
     return int(mc)
 
 
+async def apply_in(s, account_id: int, amount_mc: int, reason: str, *, ref: str | None = None,
+                   site_id: int | None = None, note: str = "") -> int:
+    """Adjust the balance and write the ledger row inside the caller's transaction (a reused `ref` raises
+    IntegrityError when it commits)."""
+    res = await s.execute(update(Account).where(Account.id == account_id)
+                          .values(balance_mc=Account.balance_mc + amount_mc)
+                          .returning(Account.balance_mc))
+    new = res.scalar_one_or_none()
+    if new is None:
+        raise NotFound("account not found")
+    s.add(CreditEntry(account_id=account_id, amount_mc=amount_mc, balance_mc=new, reason=reason, ref=ref,
+                      site_id=site_id, note=note[:300]))
+    return int(new)
+
+
 async def _apply(account_id: int, amount_mc: int, reason: str, *, ref: str | None = None,
                  site_id: int | None = None, note: str = "") -> int | None:
     """Adjust the balance and write the ledger row. Returns the new balance, or None if `ref` was already used."""
     try:
         async with session_scope() as s:
-            res = await s.execute(update(Account).where(Account.id == account_id)
-                                  .values(balance_mc=Account.balance_mc + amount_mc)
-                                  .returning(Account.balance_mc))
-            new = res.scalar_one_or_none()
-            if new is None:
-                raise NotFound("account not found")
-            s.add(CreditEntry(account_id=account_id, amount_mc=amount_mc, balance_mc=new, reason=reason, ref=ref,
-                              site_id=site_id, note=note[:300]))
-        return int(new)
+            new = await apply_in(s, account_id, amount_mc, reason, ref=ref, site_id=site_id, note=note)
+        return new
     except IntegrityError:
         if ref is None:
             raise
@@ -103,7 +113,8 @@ async def _warn_exhausted(account_id: int, site_id: int | None) -> None:
 
 
 # ── guards ───────────────────────────────────────────────────────────────────
-async def ensure(account_id: int | None, *, minimum_mc: int = 1, user_verified: bool | None = None) -> int | None:
+async def ensure(account_id: int | None, *, minimum_mc: int = MIN_START_MC, user_verified: bool | None = None
+                 ) -> int | None:
     """Raise before starting paid work. `account_id` None (no tenant, e.g. a CLI audit) is free."""
     if not account_id:
         return None
@@ -125,8 +136,10 @@ async def ensure(account_id: int | None, *, minimum_mc: int = 1, user_verified: 
         if acc.status != "active":
             raise InsufficientCredits("This workspace is suspended.")
         if acc.balance_mc < minimum_mc:
-            raise InsufficientCredits(f"Out of credits: you have {fmt(max(0, acc.balance_mc))}. "
-                                      "Add credits in Billing to keep the crew working.")
+            if acc.balance_mc <= 0:
+                raise InsufficientCredits("Out of credits. Add credits in Billing to keep the crew working.")
+            raise InsufficientCredits(f"You have {fmt(acc.balance_mc)} credits left and the crew needs at least "
+                                      f"{fmt(minimum_mc)} to keep working. Add credits in Billing.")
         return int(acc.balance_mc)
 
 
@@ -156,6 +169,13 @@ def price_rank_keywords(n: int) -> int:
     return max(0, n) * get_settings().credit_mc_per_rank_keyword
 
 
+async def affordable_tokens(account_id: int | None) -> int | None:
+    """LLM tokens the account's balance pays for (None: not metered). Used as a hard cap on each AI run."""
+    if not await is_metered(account_id):
+        return None
+    return max(0, (await balance(account_id)) * max(1, get_settings().credit_tokens_per_credit) // MC)
+
+
 async def affordable_pages(account_id: int | None, wanted: int) -> int:
     """How many pages this account can pay to crawl (operator / no tenant: all of them)."""
     if not await is_metered(account_id):
@@ -170,7 +190,8 @@ def price_table() -> list[dict[str, Any]]:
         {"item": "Audit", "unit": "per crawled page", "credits": cfg.credit_mc_per_page / MC},
         {"item": "AI work (tasks, chat, reports)", "unit": f"per {cfg.credit_tokens_per_credit:,} tokens",
          "credits": 1},
-        {"item": "Live rank check", "unit": "per keyword", "credits": cfg.credit_mc_per_rank_keyword / MC},
+        {"item": "Live search results", "unit": "per rank-checked keyword or AI web search",
+         "credits": cfg.credit_mc_per_rank_keyword / MC},
         {"item": "Fixes, rollbacks, Search Console", "unit": "", "credits": 0},
     ]
 

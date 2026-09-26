@@ -53,15 +53,27 @@ async def update(account_id: int, upd: AccountNotifyUpdate) -> AccountNotify:
             v = sorted({normalize_email(e) for e in v if e.strip()})
         elif isinstance(v, str):
             v = v.strip()
-            if v and not v.startswith("https://"):
-                from .common import ServiceError
-
-                raise ServiceError("Webhook URLs must start with https://")
+            if v:
+                await check_webhook_url(v)
         cur[k] = v
     async with session_scope() as s:
         acc = await s.get(Account, account_id)
         acc.notify_secret = secret_box().encrypt(cur)
     return AccountNotify(**cur)
+
+
+async def check_webhook_url(url: str) -> None:
+    """Customer webhooks must be public https endpoints: the platform must not be a proxy into its own network."""
+    from ..core.config import get_settings
+    from ..core.security import UnsafeURLError, assert_public_url
+    from .common import ServiceError
+
+    if not url.startswith("https://") or len(url) > 2000:
+        raise ServiceError("Webhook URLs must start with https://")
+    try:
+        await assert_public_url(url, get_settings().allow_private_networks)
+    except UnsafeURLError as exc:
+        raise ServiceError(f"That webhook address cannot be used: {exc}") from exc
 
 
 async def public(account_id: int) -> dict[str, Any]:

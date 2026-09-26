@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Coins, MailWarning } from "lucide-react";
+import { CirclePause, Coins, MailWarning } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -15,7 +15,7 @@ export function CreditsChip() {
   const me = useMe().data;
   if (!me?.account.metered) return null;
   const c = me.account.credits;
-  const tone = c <= 0 ? "border-destructive/40 bg-destructive/10 text-destructive" : c < 25 ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "text-foreground";
+  const tone = c < 1 ? "border-destructive/40 bg-destructive/10 text-destructive" : c < 25 ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "text-foreground";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -25,8 +25,21 @@ export function CreditsChip() {
           <span className="sr-only">credits</span>
         </Link>
       </TooltipTrigger>
-      <TooltipContent>{c <= 0 ? "Out of credits. The crew has paused." : "Credits left. Click to add more."}</TooltipContent>
+      <TooltipContent>{c < 1 ? "Out of credits. The crew has paused." : "Credits left. Click to add more."}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/** Shown across the app while a metered workspace has no credits left, so a paused crew never looks broken. */
+export function CreditsBanner() {
+  const me = useMe().data;
+  if (!me?.user || !me.account.metered || me.account.credits >= 1) return null; // work needs at least one credit to start
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-destructive/10 px-4 py-2.5 text-sm lg:px-6">
+      <CirclePause className="size-4 shrink-0 text-destructive" aria-hidden />
+      <span className="min-w-0 flex-1">You are out of credits, so audits, AI tasks and rank checks are paused. Fixes you already approved still apply.</span>
+      <Button asChild size="sm"><Link to="/billing">Add credits</Link></Button>
+    </div>
   );
 }
 

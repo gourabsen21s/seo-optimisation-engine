@@ -98,6 +98,8 @@ async def run_aider(ws: Workspace, instruction: str, cfg: LLMConfig, *, files: l
         cmd += ["--read", rel]
     env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "HOME": str(state), "LANG": "C.UTF-8",
            "PYTHONIOENCODING": "utf-8", "AIDER_ANALYTICS": "false", "GIT_TERMINAL_PROMPT": "0", **menv}
+    llm_log = state / "llm.txt"
+    log_before = llm_log.stat().st_size if llm_log.exists() else 0
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(ws.path), env=env, stdin=asyncio.subprocess.DEVNULL,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     limit = time_limit or get_settings().aider_timeout_seconds
@@ -106,7 +108,11 @@ async def run_aider(ws: Workspace, instruction: str, cfg: LLMConfig, *, files: l
     except TimeoutError:
         proc.kill()
         await proc.wait()
-        raise WorkspaceError(f"the code edit took longer than {limit}s and was stopped") from None
+        # Its token report died with the process: estimate the spend from its LLM log (about 4 characters a token).
+        grown = (llm_log.stat().st_size if llm_log.exists() else 0) - log_before
+        err = WorkspaceError(f"the code edit took longer than {limit}s and was stopped")
+        err.usage = {"input_tokens": max(0, grown) // 4, "output_tokens": 0}
+        raise err from None
     text = out.decode("utf-8", errors="replace")
     ws.aider_runs += 1
     sent = received = 0

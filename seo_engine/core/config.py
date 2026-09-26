@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Daily cap on LLM tokens (input + output) across all employees and chat. 0 = unlimited.
     llm_daily_token_budget: int = 0
 
-    # ---- research integrations (all optional; overridable from the UI → Workspace settings → Integrations)
+    # ---- research integrations (all optional; overridable from the UI → Platform settings → Integrations)
     # Live Google results for rank checks, SERP and competitor research: serper | serpapi | brave
     serp_provider: str = ""
     serp_api_key: str = ""
@@ -83,7 +83,12 @@ class Settings(BaseSettings):
     code_execution_enabled: bool = False
 
     # ---- notifications
-    public_url: str = ""  # where the UI is reachable, for links in notifications
+    public_url: str = ""  # where the UI is reachable, for links in notifications and account emails
+    # Proxies whose X-Forwarded-For is trusted (comma-separated IPs, or "*" only if nothing else can reach the app).
+    forwarded_allow_ips: str = "127.0.0.1"
+    # Development only: return verification / reset / invite links in API responses when no SMTP is configured.
+    # Never honoured in production.
+    dev_links: bool = False
     slack_webhook_url: str = ""
     notify_webhook_url: str = ""
     smtp_host: str = ""

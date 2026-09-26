@@ -86,7 +86,7 @@ async def test_full_flow(client, fixture_site, site_copy, monkeypatch):
     assert (await client.post("/api/settings/llm/test", json={"target": "llm"})).json()["ok"]
 
     # site listing + delete
-    assert (await client.get("/api/sites")).json()[0]["latest_scores"] is not None
+    assert next(s for s in (await client.get("/api/sites")).json() if s["id"] == sid)["latest_scores"] is not None
     assert (await client.delete(f"/api/sites/{sid}")).status_code == 204
 
 

@@ -2,7 +2,8 @@
 
 Two ways in:
 - a browser session cookie (customers), with a custom-header check on unsafe methods against CSRF;
-- an operator API key from SEO_API_KEYS (X-API-Key / Bearer / ?api_key=), which acts as a platform operator.
+- an operator API key from SEO_API_KEYS (X-API-Key / Bearer / ?api_key=), which acts as a platform operator;
+- a customer API key (`rc_…`, created in Account → API keys), which acts for that one workspace.
 
 Tenant isolation: `require_resource_access` resolves any site / job / audit / task / fix id in the path to its site
 and refuses resources that belong to another account. Operators may access everything.
@@ -44,10 +45,21 @@ async def current_principal(request: Request, api_key: str | None = Query(defaul
     supplied = _api_key(request, api_key)
     if supplied:
         keys = settings.api_key_list
-        if not keys or not any(hmac.compare_digest(supplied, k) for k in keys):
+        if supplied.startswith("rc_"):
+            # A customer API key: acts for that workspace only. Header only: keys in URLs end up in logs.
+            from ..services.team import principal_for_key
+
+            if api_key and api_key.startswith("rc_"):
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Send API keys in the Authorization header")
+
+            principal = await principal_for_key(supplied)
+            if principal is None:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
+        elif keys and any(hmac.compare_digest(supplied, k) for k in keys):
+            principal = Principal(account_id=await operator_account_id(), user_id=None, is_superuser=True,
+                                  email_verified=True, via="api_key")
+        else:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
-        principal = Principal(account_id=await operator_account_id(), user_id=None, is_superuser=True,
-                              email_verified=True, via="api_key")
     else:
         token = request.cookies.get(SESSION_COOKIE)
         if token:
@@ -63,7 +75,7 @@ async def current_principal(request: Request, api_key: str | None = Query(defaul
 
 
 async def require_superuser(p: Principal = Depends(current_principal)) -> Principal:
-    if not p.is_superuser:
+    if not p.is_superuser or not p.email_verified:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only platform operators can do that")
     return p
 
@@ -71,6 +83,15 @@ async def require_superuser(p: Principal = Depends(current_principal)) -> Princi
 async def require_user(p: Principal = Depends(current_principal)) -> Principal:
     if p.user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This needs a signed-in user, not an API key")
+    return p
+
+
+async def require_owner(p: Principal = Depends(require_user)) -> Principal:
+    """A signed-in owner of the workspace (members can use the crew but not change where its messages go)."""
+    from ..services.accounts import get_user
+
+    if (await get_user(p.user_id)).role != "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a workspace owner can do that")
     return p
 
 
@@ -129,15 +150,19 @@ class RateLimiter:
         if len(q) >= limit:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Wait a few minutes and try again.")
         q.append(t)
-        if len(self._hits) > 50_000:  # bound memory under a flood of distinct keys
-            self._hits.clear()
+        if len(self._hits) > 50_000:  # bound memory under a flood of distinct keys: drop the least recent half
+            # ponytail: per-process and in memory; move to Redis when running several API workers.
+            stale = sorted(self._hits, key=lambda k: self._hits[k][-1] if self._hits[k] else 0.0)
+            for k in stale[: len(stale) // 2]:
+                del self._hits[k]
 
 
 limiter = RateLimiter()
 
 
 def client_ip(request: Request) -> str:
-    # uvicorn runs with proxy_headers, so request.client is already the real client behind a proxy.
+    # uvicorn applies X-Forwarded-For only from SEO_FORWARDED_ALLOW_IPS (your proxy), so this is the real client
+    # behind a trusted proxy and cannot be spoofed by callers.
     return request.client.host if request.client else "?"
 
 

@@ -20,7 +20,8 @@ _TMP = tempfile.mkdtemp(prefix="seo-engine-test-")
 
 os.environ.update({
     "SEO_ENVIRONMENT": "test",
-    "SEO_DATABASE_URL": f"sqlite+aiosqlite:///{_TMP}/test.db",
+    # SEO_TEST_DATABASE_URL runs the suite against another database (an empty Postgres, say).
+    "SEO_DATABASE_URL": os.environ.get("SEO_TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{_TMP}/test.db",
     "SEO_SECRET_KEY": "test-secret-passphrase",
     "SEO_API_KEYS": "test-key",
     "SEO_ALLOW_PRIVATE_NETWORKS": "true",
@@ -37,6 +38,7 @@ os.environ.update({
     "SEO_DATA_DIR": f"{_TMP}/data",
     "SEO_QDRANT_URL": "",
     "MEM0_TELEMETRY": "False",
+    "SEO_DEV_LINKS": "true",  # account links come back in responses (no SMTP in tests)
 })
 
 
@@ -120,3 +122,12 @@ async def site_with_audit(client, fixture_site):
     assert job["status"] == "done", job
     yield sid
     await client.delete(f"/api/sites/{sid}")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test client shares one IP; start each test with empty per-IP limits."""
+    from seo_engine.api.deps import limiter
+
+    limiter._hits.clear()
+    yield

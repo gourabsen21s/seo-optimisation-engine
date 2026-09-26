@@ -45,7 +45,7 @@ async def get_audit(audit_id: int) -> Audit:
 
 
 async def run_audit(site_id: int, report: JobReporter, autopilot: bool = True) -> dict[str, Any]:
-    from . import credits
+    from . import budget, credits
 
     settings = get_settings()
     async with session_scope() as s:
@@ -90,8 +90,18 @@ async def run_audit(site_id: int, report: JobReporter, autopilot: bool = True) -
         judge_cfg = await get_judge_config()
         if judge_cfg:
             targets = [p for p in crawl.html_pages() if p.page_type in ("article", "page") and p.word_count > 150]
+            cap = await credits.affordable_tokens(site.account_id)
+            if cap is not None:  # metered: judge only as many pages as the balance pays for (≈4 chars a token)
+                spent, fit = 0, []
+                for p in targets:
+                    spent += min(len(p.text_excerpt), 24000) // 4 + 400
+                    if spent > cap:
+                        break
+                    fit.append(p)
+                targets = fit
             await report(f"Content judge ({judge_cfg.model}) assessing {len(targets)} pages")
-            judgements = await judge_pages(targets, judge_cfg)
+            judgements = await judge_pages(targets, judge_cfg,
+                                           capabilities=[budget.meter(site_id, "judge", judge_cfg.model)])
             findings += judgements_to_findings(judgements, judge_cfg.min_confidence)
 
         audit_report = build_report(crawl, findings, pagespeed)

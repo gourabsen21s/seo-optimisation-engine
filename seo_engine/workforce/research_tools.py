@@ -31,6 +31,21 @@ def _err(exc: Exception, hint: str = "") -> dict[str, Any]:
     return {"error": str(exc)[:400], **({"hint": hint} if hint else {})}
 
 
+async def _search(ctx: RunContext[EmployeeDeps], query: str, **kw: Any) -> serp.SerpPage:
+    """serp.search, billed to the site's workspace per query (the platform pays the search provider)."""
+    from ..services import credits
+
+    account_id = await credits.account_of_site(ctx.deps.site_id)
+    try:
+        await credits.ensure(account_id)
+    except credits.ServiceError as exc:
+        raise ResearchError(str(exc)) from exc
+    page = await serp.search(query, await get_integrations(), **kw)
+    await credits.charge(account_id, credits.price_rank_keywords(1), "research", site_id=ctx.deps.site_id,
+                         note=f"Web search: {query[:80]}")
+    return page
+
+
 def _site_domain(ctx: RunContext[EmployeeDeps]) -> str:
     return serp.domain_of(ctx.deps.crawl.base_url)
 
@@ -42,10 +57,9 @@ async def web_search(ctx: RunContext[EmployeeDeps], query: str, num: int = 10,
                      country: str | None = None) -> dict[str, Any]:
     """Live search results for a query: ranked organic results (title, URL, domain, snippet), People Also Ask
     questions and related searches. Use it to see who ranks, what searchers want and how snippets are written."""
-    cfg = await get_integrations()
     await ctx.deps.log(f"Searching “{query}”")
     try:
-        page = await serp.search(query, cfg, num=num, country=country)
+        page = await _search(ctx, query, num=num, country=country)
     except ResearchError as exc:
         return _err(exc, "Continue with Search Console data and the crawl, or ask the owner to add a search key.")
     ours = serp.position_of(page, _site_domain(ctx))
@@ -57,9 +71,8 @@ async def web_search(ctx: RunContext[EmployeeDeps], query: str, num: int = 10,
 @research_tools.tool
 async def check_serp_position(ctx: RunContext[EmployeeDeps], keyword: str, country: str | None = None) -> dict[str, Any]:
     """Where this site ranks right now for a keyword (top 50), plus the pages ranking above it."""
-    cfg = await get_integrations()
     try:
-        page = await serp.search(keyword, cfg, num=50, country=country)
+        page = await _search(ctx, keyword, num=50, country=country)
     except ResearchError as exc:
         return _err(exc, "Use get_query_rows / get_rankings (Search Console) for average positions instead.")
     ours = serp.position_of(page, _site_domain(ctx))
@@ -114,10 +127,9 @@ async def content_gap(ctx: RunContext[EmployeeDeps], keyword: str, our_url: str 
                       competitors: int = 5) -> dict[str, Any]:
     """Compare our page with the top-ranking pages for a keyword: topics/sections they cover that we don't,
     questions they answer, schema they use, terms we lack, and word-count benchmarks."""
-    cfg = await get_integrations()
     domain = _site_domain(ctx)
     try:
-        page = await serp.search(keyword, cfg, num=10)
+        page = await _search(ctx, keyword, num=10)
     except ResearchError as exc:
         return _err(exc, "Without a search provider, pass competitor URLs to analyze_page instead.")
     urls = [r.url for r in page.results if r.domain != domain and not r.domain.endswith("." + domain)][:max(1, min(competitors, 8))]
@@ -155,7 +167,6 @@ async def find_link_prospects(ctx: RunContext[EmployeeDeps], topic: str,
                               = "resource_pages", limit: int = 20) -> dict[str, Any]:
     """Find real backlink opportunities via search: resource pages, sites accepting guest posts, recent
     roundups, or pages that mention the brand without linking to it."""
-    cfg = await get_integrations()
     domain = _site_domain(ctx)
     brand = ctx.deps.profile.name or domain
     queries = {
@@ -167,7 +178,7 @@ async def find_link_prospects(ctx: RunContext[EmployeeDeps], topic: str,
     seen: dict[str, dict] = {}
     for q in queries:
         try:
-            page = await serp.search(q, cfg, num=20)
+            page = await _search(ctx, q, num=20)
         except ResearchError as exc:
             return _err(exc)
         for r in page.results:

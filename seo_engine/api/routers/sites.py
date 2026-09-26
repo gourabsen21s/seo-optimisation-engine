@@ -53,13 +53,16 @@ async def delete_site(site_id: int):
 
 
 @router.get("/connectors/fields")
-async def connector_fields():
-    return CONNECTOR_FIELDS
+async def connector_fields(p: Principal = Depends(current_principal)):
+    if p.is_superuser:
+        return CONNECTOR_FIELDS
+    return {k: v for k, v in CONNECTOR_FIELDS.items() if k != "local"}  # the server's disk is operator-only
 
 
 @router.put("/sites/{site_id}/connector")
-async def set_connector(site_id: int, body: ConnectorIn):
-    return await site_service.serialize(await site_service.set_connector(site_id, body.type, body.config))
+async def set_connector(site_id: int, body: ConnectorIn, p: Principal = Depends(current_principal)):
+    return await site_service.serialize(await site_service.set_connector(site_id, body.type, body.config,
+                                                                         operator=p.is_superuser))
 
 
 @router.post("/sites/{site_id}/connector/test")

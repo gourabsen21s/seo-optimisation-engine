@@ -22,7 +22,7 @@ export default function ContentPage() {
     return (
       <div className="grid gap-5">
         <PageHeader icon={<ClipboardCheck />} title="Content quality" description="Page-by-page judgements from Jev, the Compliance Officer." />
-        <EmptyState icon={<Bot />} title="No content judgements yet" description="Add a TypeSafe API key in Workspace settings. On the next audit, Jev judges every article for policy risk, depth and generic-AI writing." />
+        <EmptyState icon={<Bot />} title="No content judgements yet" description="On each audit Jev, the compliance judge, scores every article for policy risk, depth and generic-AI writing. Judgements appear here after the next audit once the judge is enabled on the platform." />
       </div>
     );
   }

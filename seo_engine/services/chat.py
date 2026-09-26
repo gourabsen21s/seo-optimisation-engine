@@ -65,8 +65,8 @@ async def send(site_id: int, message: str) -> dict[str, Any]:
                       toolsets=[collab_tools, seo_tools, subset(RESEARCH, RANKS), manager_tools], retries=2,
                       model_settings=model_settings(cfg), name="chat")
         result = await agent.run(message, deps=deps, message_history=history[-40:],
+                                 capabilities=[budget.meter(site.id, "chat", cfg.model)],
                                  usage_limits=UsageLimits(request_limit=25, total_tokens_limit=remaining or None))
-        await budget.record(site.id, "chat", cfg.model, result.usage)
     except LLMNotConfigured as exc:
         raise ServiceError(f"No LLM configured: {exc}") from exc
     except (UnexpectedModelBehavior, UsageLimitExceeded, AgentRunError) as exc:

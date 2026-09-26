@@ -441,7 +441,7 @@ export type Pack = { id: string; name: string; credits: number; price_cents: num
 export type PriceRow = { item: string; unit: string; credits: number };
 export type PacksInfo = { currency: string; enabled: boolean; signup_credits: number; packs: Pack[]; prices: PriceRow[] };
 export type LedgerEntry = { id: number; at: string; amount: number; balance: number; reason: string; note: string; site_id: number | null; site: string | null };
-export type Purchase = { id: number; pack_id: string; credits: number; amount_cents: number; currency: string; status: "pending" | "paid" | "expired" | "failed"; created_at: string; paid_at: string | null };
+export type Purchase = { id: number; pack_id: string; credits: number; amount_cents: number; currency: string; status: "pending" | "paid" | "expired" | "failed" | "refunded"; refunded_cents: number; created_at: string; paid_at: string | null };
 export type BillingOverview = PacksInfo & {
   credits: number;
   metered: boolean;
@@ -454,6 +454,10 @@ export type AccountNotify = {
   slack_webhook_set: boolean; notify_webhook_set: boolean; email_available: boolean;
 };
 export type AccountNotifyUpdate = Partial<{ email_members: boolean; extra_emails: string[]; events: string[]; slack_webhook_url: string; notify_webhook_url: string }>;
+export type Member = { id: number; email: string; name: string; role: "owner" | "member"; email_verified: boolean; last_login_at: string | null; created_at: string };
+export type PendingInvite = { id: number; email: string; role: string; created_at: string; expires_at: string };
+export type WorkspaceMembers = { members: Member[]; invites: PendingInvite[] };
+export type ApiKeyInfo = { id: number; name: string; prefix: string; created_at: string; last_used_at: string | null; created_by?: string | null };
 export type AdminAccount = { id: number; name: string; kind: string; status: string; credits: number; owner: string | null; sites: number; created_at: string };
 export type SitePatch = Partial<{
   name: string;

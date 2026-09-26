@@ -134,6 +134,38 @@ class CreditEntry(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
 
+class Invite(Base):
+    """An invitation to join an account. Only the SHA-256 of the emailed token is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    invited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class ApiKey(Base):
+    """A customer API key, scoped to one account. Shown once at creation; only its hash is stored."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(100))
+    prefix: Mapped[str] = mapped_column(String(16))  # first characters, to recognise a key in the list
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
 class Purchase(Base):
     """A credit pack bought through Stripe Checkout."""
 
@@ -147,7 +179,9 @@ class Purchase(Base):
     amount_cents: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(10), default="usd")
     stripe_session_id: Mapped[str | None] = mapped_column(String(200), unique=True)
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | paid | expired | failed
+    payment_intent_id: Mapped[str | None] = mapped_column(String(200), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | paid | expired | failed | refunded
+    refunded_cents: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
